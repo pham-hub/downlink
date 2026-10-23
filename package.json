@@ -1,8 +1,8 @@
 {
-  "name": "video-downloader",
-  "productName": "Video Downloader",
+  "name": "downlink",
+  "productName": "Downlink",
   "version": "1.0.0",
-  "description": "A simple macOS video downloader built on yt-dlp",
+  "description": "Downlink: a simple macOS video downloader built on yt-dlp",
   "main": "src/main.js",
   "author": "Andrew Pham",
   "license": "MIT",
@@ -11,17 +11,18 @@
     "start": "node scripts/fetch-tools.js --if-missing && electron .",
     "dev": "node scripts/fetch-tools.js --if-missing && ELECTRON_ENABLE_LOGGING=1 electron .",
     "fetch-tools": "node scripts/fetch-tools.js",
+    "icon": "electron scripts/make-icon.js",
     "dist": "node scripts/fetch-tools.js --all && electron-builder",
     "pack": "node scripts/fetch-tools.js && electron-builder --dir",
-    "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Video Downloader.app\" && cp -R \"dist/mac-arm64/Video Downloader.app\" /Applications/"
+    "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Downlink.app\" && cp -R \"dist/mac-arm64/Downlink.app\" /Applications/"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.andrewpham.videodownloader",
-    "productName": "Video Downloader",
+    "appId": "com.andrewpham.downlink",
+    "productName": "Downlink",
     "files": [
       "src/**/*",
       "renderer/**/*",
