@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Video Downloader</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Viewfinder corners, as on pnr.digital -->
+  <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+  <div id="app">
+    <div class="titlebar">
+      <img class="brand-logo" src="assets/pnr-mark.svg" alt="PNR Digital" />
+      <span class="brand-divider" aria-hidden="true"></span>
+      <span class="brand-app">Video Downloader</span>
+    </div>
+
+    <section id="main-screen" class="screen hidden">
+      <!-- URL -->
+      <form id="url-form" class="url-bar" autocomplete="off">
+        <svg class="icon url-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 11.5a3 3 0 0 0 4.24 0l2.5-2.5a3 3 0 0 0-4.24-4.24l-.75.75M11.5 8.5a3 3 0 0 0-4.24 0l-2.5 2.5a3 3 0 0 0 4.24 4.24l.75-.75" /></svg>
+        <input id="url-input" type="text" spellcheck="false" placeholder="Paste a video link" aria-label="Video URL" />
+        <button id="fetch-btn" type="submit" class="btn btn-secondary">
+          <span class="spinner hidden" aria-hidden="true"></span>
+          <span class="label">Fetch</span>
+        </button>
+      </form>
+
+      <!-- Preview -->
+      <div id="preview" class="card preview is-empty">
+        <div id="preview-thumb" class="thumb">
+          <svg class="icon thumb-placeholder" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2" /><path d="m8.5 8 3.5 2-3.5 2z" /></svg>
+        </div>
+        <div class="meta">
+          <div id="preview-title" class="preview-title">Nothing loaded yet</div>
+          <div id="preview-sub" class="preview-sub muted">Paste or drop a link from YouTube, TikTok, SoundCloud, or most other video sites.</div>
+        </div>
+      </div>
+
+      <div id="preview-error" class="notice error hidden"></div>
+
+      <!-- Options -->
+      <div id="options" class="card options is-disabled">
+        <div class="segmented" id="mode-control" role="radiogroup" aria-label="What to download">
+          <button type="button" role="radio" data-mode="both">
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2" /><path d="m8.5 8 3.5 2-3.5 2z" /></svg>
+            Video + Audio
+          </button>
+          <button type="button" role="radio" data-mode="video">
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="2" /><path d="M2.5 8h15M2.5 12h15M6.5 4.5v11M13.5 4.5v11" /></svg>
+            Video only
+          </button>
+          <button type="button" role="radio" data-mode="audio">
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 14.5V5l8-1.5V13" /><circle cx="5.5" cy="14.5" r="2" /><circle cx="13.5" cy="13" r="2" /></svg>
+            Audio only
+          </button>
+        </div>
+
+        <div class="field" id="quality-field">
+          <label for="quality-select">Quality</label>
+          <div class="select-wrap">
+            <select id="quality-select"><option value="best">Best available</option></select>
+          </div>
+        </div>
+
+        <div class="field" id="codec-field">
+          <label>Codec</label>
+          <div class="field-body">
+            <div class="segmented segmented-sm" id="codec-control" role="radiogroup" aria-label="Video codec">
+              <button type="button" role="radio" data-codec="best">Best quality</button>
+              <button type="button" role="radio" data-codec="compatible">Max compatibility</button>
+            </div>
+            <p id="codec-hint" class="hint muted"></p>
+          </div>
+        </div>
+
+        <div class="field hidden" id="audio-field">
+          <label>Format</label>
+          <div class="field-body">
+            <div class="segmented segmented-sm" id="audio-control" role="radiogroup" aria-label="Audio format">
+              <button type="button" role="radio" data-format="mp3">MP3</button>
+              <button type="button" role="radio" data-format="m4a">M4A</button>
+              <button type="button" role="radio" data-format="wav">WAV</button>
+            </div>
+            <p id="audio-hint" class="hint muted"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="clip-toggle">Clip</label>
+          <div class="field-body">
+            <label class="switch-row">
+              <input id="clip-toggle" type="checkbox" class="switch" />
+              <span>Download only part of it</span>
+            </label>
+            <div id="clip-fields" class="clip-fields hidden">
+              <div class="time-input">
+                <span>From</span>
+                <input id="clip-start" type="text" inputmode="numeric" placeholder="0:00" spellcheck="false" />
+              </div>
+              <div class="time-input">
+                <span>To</span>
+                <input id="clip-end" type="text" inputmode="numeric" placeholder="end" spellcheck="false" />
+              </div>
+              <span id="clip-length" class="hint muted"></span>
+            </div>
+            <p id="clip-error" class="hint error-text hidden"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Save to</label>
+          <div class="folder">
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6.5a2 2 0 0 1 2-2h3l2 2h6a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2z" /></svg>
+            <span id="folder-path" class="folder-path">Choose a folder</span>
+            <button id="choose-folder-btn" type="button" class="btn btn-small btn-ghost">Change</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action / progress / result -->
+      <button id="download-btn" class="btn btn-primary btn-block" disabled>Download</button>
+
+      <div id="progress" class="card progress-card hidden">
+        <div class="progress-head">
+          <span id="progress-stage">Starting&hellip;</span>
+          <span id="progress-percent" class="muted tabular"></span>
+        </div>
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+        <div class="progress-foot">
+          <span id="progress-detail" class="muted small tabular"></span>
+          <button id="cancel-btn" class="btn btn-small btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <div id="result" class="card result hidden">
+        <div class="result-icon">
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10.5 3.2 3L15 6.5" /></svg>
+        </div>
+        <div class="result-text">
+          <strong>Saved</strong>
+          <span id="result-file" class="muted"></span>
+        </div>
+        <div class="result-actions">
+          <button id="reveal-btn" class="btn btn-small btn-secondary">Show in Finder</button>
+          <button id="open-btn" class="btn btn-small btn-secondary">Open</button>
+        </div>
+      </div>
+
+      <div id="status" class="notice hidden"></div>
+
+      <footer id="footer" class="footer muted"></footer>
+    </section>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
