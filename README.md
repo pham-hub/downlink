@@ -14,7 +14,8 @@ Everything it needs ships inside the app: `yt-dlp`, `ffmpeg`/`ffprobe`, and [Den
 ## Running in dev mode
 
 ```bash
-cd video-downloader
+git clone https://github.com/pham-hub/downlink.git
+cd downlink
 npm install
 npm start
 ```
