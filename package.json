@@ -1,0 +1,63 @@
+{
+  "name": "video-downloader",
+  "productName": "Video Downloader",
+  "version": "1.0.0",
+  "description": "A simple macOS video downloader built on yt-dlp",
+  "main": "src/main.js",
+  "author": "Andrew Pham",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/fetch-tools.js --if-missing && electron .",
+    "dev": "node scripts/fetch-tools.js --if-missing && ELECTRON_ENABLE_LOGGING=1 electron .",
+    "fetch-tools": "node scripts/fetch-tools.js",
+    "dist": "node scripts/fetch-tools.js --all && electron-builder",
+    "pack": "node scripts/fetch-tools.js && electron-builder --dir",
+    "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Video Downloader.app\" && cp -R \"dist/mac-arm64/Video Downloader.app\" /Applications/"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.andrewpham.videodownloader",
+    "productName": "Video Downloader",
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/${arch}",
+        "to": "bin"
+      }
+    ],
+    "afterPack": "scripts/after-pack.js",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "minimumSystemVersion": "12.0"
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    }
+  }
+}
