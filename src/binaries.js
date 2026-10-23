@@ -58,7 +58,7 @@ function resolveTools() {
     if (!fs.existsSync(file)) {
       throw new Error(
         app.isPackaged
-          ? `Video Downloader is missing its built-in ${LABELS[tool]}. Reinstall the app.`
+          ? `Downlink is missing its built-in ${LABELS[tool]}. Reinstall the app.`
           : `Missing ${LABELS[tool]}. Run "npm run fetch-tools".`
       );
     }

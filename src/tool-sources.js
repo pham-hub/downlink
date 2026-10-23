@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const USER_AGENT = 'video-downloader-app';
+const USER_AGENT = 'downlink-app';
 
 // Signed and notarized static builds. Pinned: ffmpeg rarely matters for downloads, and the
 // site's "latest" redirects aren't reliable. Bump the folder names to upgrade.
