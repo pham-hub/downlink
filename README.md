@@ -1,17 +1,34 @@
 # Downlink
 
-A simple macOS desktop app for downloading videos with [yt-dlp](https://github.com/yt-dlp/yt-dlp). Paste a URL, pick a quality, pick a folder, download. No queue, no playlists, no history — just the basics.
+A simple Mac app for downloading videos and audio. Paste or drop a link, pick a quality, download. No queue, no playlists, no history — just the basics.
 
-Works with YouTube, TikTok, SoundCloud, and most other sites yt-dlp supports. **Vimeo isn't supported**: it only allows downloads when signed in, and the app deliberately doesn't handle accounts.
+## Download
+
+**[Download for Apple Silicon Macs (M1 and newer)](https://github.com/pham-hub/downlink/releases/latest/download/Downlink-arm64.dmg)**
+
+**[Download for Intel Macs](https://github.com/pham-hub/downlink/releases/latest/download/Downlink-x64.dmg)**
+
+Not sure which? Open the Apple menu → **About This Mac**. If it says **Chip: Apple M…**, get Apple Silicon. If it says **Processor: … Intel**, get Intel. Needs macOS 12 Monterey or later.
+
+**Installing**
+
+1. Open the downloaded `.dmg` and drag **Downlink** into **Applications**.
+2. Open Downlink. The first time, macOS blocks it with *Apple could not verify "Downlink" is free of malware*. Click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll down to the message about Downlink, and click **Open Anyway**.
+
+You only do step 3 once. It happens because Downlink isn't signed with a paid Apple Developer account; any unsigned Mac app gets the same prompt. (On macOS 14 and earlier, right-clicking the app and choosing **Open** also works.)
+
+**Updating:** download the newest file from the links above and drag it into Applications again, replacing the old one. You rarely need to: the part that talks to video sites (yt-dlp) updates itself in the background.
+
+## What it supports
+
+Works with YouTube, TikTok, SoundCloud, and most other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports. **Vimeo isn't supported**: it only allows downloads when signed in, and the app deliberately doesn't handle accounts.
 
 Everything it needs ships inside the app: `yt-dlp`, `ffmpeg`/`ffprobe`, and [Deno](https://deno.com) (the JavaScript runtime yt-dlp uses to solve YouTube's player challenges). No Python, pip, or Homebrew required, and it works offline from the first launch. yt-dlp and Deno then keep themselves up to date in the background.
 
-## Requirements
+## Running from source
 
-- macOS 12 Monterey or later, Apple Silicon or Intel
-- [Node.js](https://nodejs.org/) 18+ (only needed to run in dev mode or build the app — not needed by end users of the packaged `.dmg`)
-
-## Running in dev mode
+Needs [Node.js](https://nodejs.org/) 18+ (only for developing or building the app, not for using it).
 
 ```bash
 git clone https://github.com/pham-hub/downlink.git
@@ -28,19 +45,19 @@ The first `npm start` downloads the tools for this Mac into `vendor/<arch>/` (ab
 npm run dist
 ```
 
-Fetches the tools for both Apple Silicon and Intel, then uses `electron-builder` to produce one `.dmg` per architecture in `dist/` (`Downlink-<version>-arm64.dmg` and `-x64.dmg`). Separate builds keep each download about half the size of a universal one.
+Fetches the tools for both Apple Silicon and Intel, then uses `electron-builder` to produce one `.dmg` per architecture in `dist/`: `Downlink-arm64.dmg` and `Downlink-x64.dmg`. Separate builds keep each download about half the size of a universal one.
 
 `npm run install-app` builds for this Mac only and copies it into `/Applications`.
 
 Both commands ad-hoc sign the app after packaging (`scripts/after-pack.js`). That isn't Apple's Developer ID signing, but without it Apple Silicon Macs call the downloaded app "damaged" and offer no way to open it.
 
-## Opening the app on another Mac ("unidentified developer" warning)
+**Publishing a release:** bump `version` in `package.json`, run `npm run dist`, then:
 
-This app is **not signed with an Apple Developer ID or notarized**, since that requires a paid Apple Developer account. The first time someone opens it, Gatekeeper blocks it with a message like *Apple could not verify "Downlink" is free of malware*.
+```bash
+gh release create v1.2.3 dist/Downlink-arm64.dmg dist/Downlink-x64.dmg --title "Downlink 1.2.3"
+```
 
-To open it anyway: try to open the app once, then go to **System Settings → Privacy & Security**, scroll down to the message about Downlink, and click **Open Anyway**. This only needs to be done once. (On macOS 14 and earlier, right-clicking the app and choosing **Open** also works.)
-
-This is standard behavior for any unsigned Mac app and is not specific to this project. The bundled tools don't trigger any extra prompts.
+Keep the file names exactly as they are (no version number): the Download links above point at whichever release is newest, and only work if every release uses the same names.
 
 ## What the app does on your Mac
 
@@ -83,3 +100,11 @@ scripts/after-pack.js   Ad-hoc signs the packaged app (see "Building")
 scripts/make-icon.js    Renders build/icon.svg into the app icon (`npm run icon`)
 renderer/            UI (HTML/CSS/JS)
 ```
+
+## Third-party software
+
+Downlink's own code is MIT-licensed (see `LICENSE`). The app also includes these separate programs, which it runs and which keep their own licenses:
+
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**, [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE). Its macOS build includes Python and other libraries; their licenses are in `Downlink.app/Contents/Resources/bin/yt-dlp/_internal/THIRD_PARTY_LICENSES.txt`.
+- **[Deno](https://github.com/denoland/deno)**, [MIT](https://github.com/denoland/deno/blob/main/LICENSE.md).
+- **[FFmpeg](https://ffmpeg.org) 9.0.2** (`ffmpeg` and `ffprobe`), static builds by [Martin Riedl](https://ffmpeg.martin-riedl.de), licensed under the [GNU GPL version 3](https://www.gnu.org/licenses/gpl-3.0.html). Source code: [ffmpeg-9.0.2.tar.xz](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz). The build scripts are at [git.martin-riedl.de/ffmpeg/build-script](https://git.martin-riedl.de/ffmpeg/build-script), and the exact build configuration is listed in [versions.txt](https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/versions.txt).
