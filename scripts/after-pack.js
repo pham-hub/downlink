@@ -9,6 +9,8 @@ const { execFileSync } = require('child_process');
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
+  // A signed build (electron-builder.signed.js) gets a real signature after this hook instead.
+  if (context.packager.platformSpecificBuildOptions.identity !== null) return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
 };

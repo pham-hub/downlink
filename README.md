@@ -42,6 +42,8 @@ yt-dlp, Deno and FFmpeg are bundled into the app at build time, so nothing else 
 gh release create v1.2.3 dist/Downlink-arm64.dmg dist/Downlink-x64.dmg
 ```
 
+For a signed and notarized build with an Apple Developer ID, see [SIGNING.md](SIGNING.md).
+
 ## Credits
 
 Downlink is MIT licensed. It includes [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense), [Deno](https://github.com/denoland/deno) (MIT) and [FFmpeg](https://ffmpeg.org) 9.0.2 built by [Martin Riedl](https://ffmpeg.martin-riedl.de) (GPL v3, [source](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz), [build scripts](https://git.martin-riedl.de/ffmpeg/build-script)).

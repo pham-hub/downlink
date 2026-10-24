@@ -119,6 +119,35 @@ async function latestDeno() {
   return (await latestGithubTag('denoland/deno')).replace(/^v/, '');
 }
 
+function relink(target, linkPath) {
+  fs.rmSync(linkPath, { recursive: true, force: true });
+  fs.symlinkSync(target, linkPath);
+}
+
+// yt-dlp's zip stores the bundled Python.framework with its symlinks flattened into copies:
+// Python, Resources and Versions/Current duplicate Versions/3.x. codesign rejects that layout
+// ("bundle format is ambiguous"), which breaks Developer ID signing, so put the links back.
+function relinkFrameworks(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.endsWith('.framework')) continue;
+    const framework = path.join(dir, entry.name);
+    const versionsDir = path.join(framework, 'Versions');
+    if (!fs.existsSync(versionsDir) || fs.lstatSync(path.join(versionsDir, 'Current')).isSymbolicLink()) continue;
+    const versions = fs.readdirSync(versionsDir).filter((v) => v !== 'Current');
+    if (versions.length !== 1) continue;
+    relink(versions[0], path.join(versionsDir, 'Current'));
+    for (const name of fs.readdirSync(path.join(versionsDir, versions[0]))) {
+      relink(path.join('Versions', 'Current', name), path.join(framework, name));
+    }
+    // PyInstaller also puts the library next to the framework ("_internal/Python").
+    const binary = entry.name.replace(/\.framework$/, '');
+    const sibling = path.join(dir, binary);
+    if (fs.existsSync(sibling) && !fs.lstatSync(sibling).isSymbolicLink()) {
+      relink(path.join(entry.name, 'Versions', 'Current', binary), sibling);
+    }
+  }
+}
+
 // The folder build ("yt-dlp_macos.zip") is universal and starts in a fraction of a second;
 // the single-file build unpacks itself on every run and takes ~7s.
 async function installYtDlp(version, toolsDir) {
@@ -127,6 +156,7 @@ async function installYtDlp(version, toolsDir) {
   const dir = path.join(toolsDir, 'yt-dlp');
   fs.rmSync(dir, { recursive: true, force: true });
   await unzipBuffer(data, dir);
+  relinkFrameworks(path.join(dir, '_internal'));
   makeExecutable(path.join(toolsDir, LAYOUT.ytDlp));
 }
 

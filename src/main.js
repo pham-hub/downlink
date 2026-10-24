@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, Notification, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -63,7 +63,17 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
+// Electron's default menu has Reload, Developer Tools, zoom and links to electronjs.org. Reloading
+// mid-download would lose track of it, and zoom breaks the fixed-width layout. Edit stays for
+// copy and paste.
+function setMenu() {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }])
+  );
+}
+
 app.whenReady().then(() => {
+  setMenu();
   // The packaged app gets its icon from build/icon.icns; this covers `npm start`.
   const devIcon = path.join(__dirname, '..', 'build', 'icon.png');
   if (app.dock && !app.isPackaged && fs.existsSync(devIcon)) app.dock.setIcon(devIcon);
@@ -181,7 +191,7 @@ ipcMain.handle('start-download', async (event, payload) => {
         url: payload.url.trim(),
         folder: payload.folder,
         mode: payload.mode,
-        height: Number.isInteger(payload.height) ? payload.height : null,
+        resolution: Number.isInteger(payload.resolution) ? payload.resolution : null,
         qualityLabel: payload.qualityLabel,
         audioFormat: payload.audioFormat,
         videoCodec: payload.videoCodec,
