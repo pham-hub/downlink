@@ -1,19 +1,12 @@
-/* PNR Digital look, matching pnr.digital's theme.css: dark backdrop, blue → teal → sea foam brand
-   palette, neutral off-white for selected toggles and the primary button, and a single warm accent
-   (--signal) reserved for hover, focus and live elements. */
+/* PNR Digital colours in a modern dark layout: a brand-blue glow behind the window, cards with a
+   faint sea-foam top edge, quiet frosted toggles and a blue-to-teal download button. Orange
+   (--signal) stays reserved for hover, focus and live elements. */
 
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-weight: 100 800;
   src: url('assets/fonts/jetbrains-mono.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Public Sans';
-  font-style: normal;
-  font-weight: 100 900;
-  src: url('assets/fonts/public-sans.woff2') format('woff2');
 }
 
 :root {
@@ -23,9 +16,11 @@
   --surface: #091017;
   --surface-2: #0d161e;
   --inset: #060b10;
-  --border: rgba(220, 236, 240, 0.12);
-  --border-strong: rgba(220, 236, 240, 0.22);
-  --hairline: rgba(220, 236, 240, 0.18);
+  --border: rgba(220, 236, 240, 0.08);
+  --border-strong: rgba(220, 236, 240, 0.12);
+  /* Cards: a solid fill with a 1px edge that fades from sea foam at the top. */
+  --card-fill: linear-gradient(180deg, #0b131b, #091017);
+  --card-edge: linear-gradient(180deg, rgba(94, 230, 192, 0.2), rgba(220, 236, 240, 0.06) 40%);
 
   --text: #eef4f6;
   --muted: #9aa6af;
@@ -42,24 +37,32 @@
   --danger: #f2545b;
   --danger-text: #ffb3b6;
 
-  --radius: 4px;
-  --radius-sm: 3px;
-  --font-body: 'Public Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font-body: system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-brand: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--bg);
+}
+
 html,
 body {
   margin: 0;
-  background: var(--bg);
   overflow: hidden;
 }
 
 body {
+  background:
+    radial-gradient(75% 46% at 50% -8%, rgba(47, 123, 224, 0.36), transparent 70%),
+    radial-gradient(40% 30% at 90% -4%, rgba(94, 230, 192, 0.18), transparent 70%),
+    var(--bg);
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.4;
@@ -106,49 +109,7 @@ p {
   stroke-linejoin: round;
 }
 
-/* ---------- Frame & title bar ---------- */
-
-.frame {
-  position: fixed;
-  inset: 8px;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.frame i {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 0 solid var(--hairline);
-}
-
-.frame i:nth-child(1) {
-  left: 0;
-  top: 0;
-  border-left-width: 1px;
-  border-top-width: 1px;
-}
-
-.frame i:nth-child(2) {
-  right: 0;
-  top: 0;
-  border-right-width: 1px;
-  border-top-width: 1px;
-}
-
-.frame i:nth-child(3) {
-  left: 0;
-  bottom: 0;
-  border-left-width: 1px;
-  border-bottom-width: 1px;
-}
-
-.frame i:nth-child(4) {
-  right: 0;
-  bottom: 0;
-  border-right-width: 1px;
-  border-bottom-width: 1px;
-}
+/* ---------- Title bar ---------- */
 
 .titlebar {
   height: 50px;
@@ -173,7 +134,7 @@ p {
 }
 
 .brand-app {
-  font-family: var(--font-mono);
+  font-family: var(--font-brand);
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -188,9 +149,10 @@ p {
 }
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--card-fill) padding-box, var(--card-edge) border-box;
+  border: 1px solid transparent;
   border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* ---------- Buttons ---------- */
@@ -210,7 +172,7 @@ p {
   background: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s, box-shadow 0.15s;
 }
 
 .btn:disabled {
@@ -218,18 +180,18 @@ p {
   cursor: default;
 }
 
+/* Blue-to-teal fill with a faint top highlight and no outer glow; orange on hover. */
 .btn-primary {
-  height: 46px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--bg);
-  background: var(--select);
+  height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #fff;
+  background: linear-gradient(90deg, var(--blue), #1fa3c6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn-primary:hover:not(:disabled) {
+  color: var(--bg);
   background: var(--signal);
 }
 
@@ -284,8 +246,8 @@ p {
   gap: 8px;
   height: 52px;
   padding: 0 7px 0 14px;
-  background: var(--inset);
-  border: 1px solid var(--border-strong);
+  background: var(--card-fill) padding-box, var(--card-edge) border-box;
+  border: 1px solid transparent;
   border-radius: var(--radius);
   transition: border-color 0.15s;
 }
@@ -357,7 +319,7 @@ p {
   right: 6px;
   bottom: 6px;
   padding: 4px 8px;
-  border-radius: 2px;
+  border-radius: 4px;
   background: rgba(4, 8, 12, 0.85);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -387,15 +349,7 @@ p {
 }
 
 .preview-sub {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.04em;
-}
-
-.preview.is-empty .preview-sub {
-  font-family: var(--font-body);
   font-size: 12px;
-  letter-spacing: 0;
 }
 
 .preview.is-loading .thumb,
@@ -440,8 +394,9 @@ p {
   display: grid;
   grid-auto-columns: 1fr;
   grid-auto-flow: column;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--inset);
   overflow: hidden;
 }
@@ -451,9 +406,9 @@ p {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  height: 38px;
+  height: 34px;
   border: none;
-  border-radius: 0;
+  border-radius: 7px;
   background: none;
   color: var(--muted);
   font: inherit;
@@ -462,18 +417,15 @@ p {
   transition: background-color 0.15s, color 0.15s;
 }
 
-.segmented button + button {
-  border-left: 1px solid var(--border);
-}
-
 .segmented button:hover:not(:disabled):not([aria-checked='true']) {
   color: var(--signal);
 }
 
 .segmented button[aria-checked='true'] {
-  background: var(--select);
-  color: var(--bg);
-  font-weight: 600;
+  background: rgba(220, 236, 240, 0.14);
+  color: #fff;
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(220, 236, 240, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .segmented button:focus-visible {
@@ -491,12 +443,10 @@ p {
 }
 
 .segmented-sm button {
-  height: 30px;
+  height: 26px;
   padding: 0 12px;
   white-space: nowrap;
-  font-family: var(--font-mono);
   font-size: 12px;
-  letter-spacing: 0.06em;
 }
 
 .field {
@@ -509,10 +459,7 @@ p {
   flex: none;
   width: 72px;
   padding-top: 9px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 12px;
   color: var(--faint);
 }
 
@@ -612,13 +559,13 @@ select:focus-visible {
 }
 
 .switch:checked {
-  background: var(--select);
+  background: var(--blue);
   box-shadow: none;
 }
 
 .switch:checked::after {
   transform: translateX(14px);
-  background: var(--bg);
+  background: #fff;
 }
 
 .clip-fields {
@@ -649,10 +596,7 @@ select:focus-visible {
 .time-input span {
   padding: 0 6px 0 12px;
   color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 12px;
 }
 
 .time-input input {
@@ -731,7 +675,6 @@ select:focus-visible {
 }
 
 #progress-percent {
-  font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 600;
   color: var(--seafoam);
@@ -748,8 +691,8 @@ select:focus-visible {
 
 .progress-track {
   position: relative;
-  height: 4px;
-  border-radius: 1px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--inset);
   box-shadow: inset 0 0 0 1px var(--border);
   overflow: hidden;
@@ -758,7 +701,9 @@ select:focus-visible {
 .progress-fill {
   height: 100%;
   width: 0%;
+  border-radius: 3px;
   background: var(--brand-gradient);
+  box-shadow: 0 0 14px rgba(94, 230, 192, 0.55);
   transition: width 0.25s ease;
 }
 
@@ -781,7 +726,6 @@ select:focus-visible {
   align-items: center;
   gap: 12px;
   padding: 12px 12px 12px 14px;
-  border-color: rgba(94, 230, 192, 0.3);
 }
 
 .result-icon {
@@ -808,11 +752,8 @@ select:focus-visible {
 }
 
 .result-text strong {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--seafoam);
 }
 
@@ -831,7 +772,7 @@ select:focus-visible {
 
 .notice {
   padding: 10px 14px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-size: 12.5px;
   -webkit-user-select: text;
   user-select: text;
@@ -853,7 +794,6 @@ select:focus-visible {
   text-align: center;
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
   color: var(--faint);
 }
 

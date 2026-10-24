@@ -51,7 +51,7 @@ const AUDIO_HINTS = {
 
 const CODEC_HINTS = {
   best: 'AV1 or VP9 when available. Sharpest picture at the same size; needs a recent Mac or player.',
-  compatible: 'H.264. Plays everywhere, including older devices, but looks softer at low bitrates.',
+  compatible: 'H.264. Plays everywhere, including older devices, but looks softer and stops at 1080p on YouTube.',
 };
 
 const STEP_LABELS = {
@@ -257,7 +257,7 @@ document.addEventListener('dragover', (event) => {
 document.addEventListener('drop', (event) => {
   event.preventDefault();
   const url = droppedUrl(event.dataTransfer);
-  if (!url || state.downloading) return;
+  if (!url || state.downloading || fetchBtn.disabled) return;
   urlInput.value = url;
   urlForm.requestSubmit();
 });
@@ -289,15 +289,19 @@ function effectiveMode() {
 }
 
 function renderQualityOptions() {
-  const qualities = state.formats ? state.formats.qualities : [];
+  let qualities = state.formats ? state.formats.qualities : [];
+  // H.264 often stops below the top resolution (1080p on YouTube); don't offer what it can't deliver.
+  if (state.settings.videoCodec === 'compatible' && qualities.some((q) => q.h264)) {
+    qualities = qualities.filter((q) => q.h264);
+  }
   qualitySelect.innerHTML = '';
   const best = document.createElement('option');
   best.value = 'best';
   best.textContent = qualities.length ? `Best available (${qualities[0].label})` : 'Best available';
   qualitySelect.appendChild(best);
-  qualities.forEach(({ height, label }) => {
+  qualities.forEach(({ tier, label }) => {
     const option = document.createElement('option');
-    option.value = String(height);
+    option.value = String(tier);
     option.textContent = label;
     qualitySelect.appendChild(option);
   });
@@ -305,8 +309,8 @@ function renderQualityOptions() {
   // Remembered quality: pick the highest available at or below it.
   const preferred = state.settings.quality;
   if (preferred !== 'best') {
-    const match = qualities.find((q) => q.height <= Number(preferred));
-    qualitySelect.value = match ? String(match.height) : 'best';
+    const match = qualities.find((q) => q.tier <= Number(preferred));
+    qualitySelect.value = match ? String(match.tier) : 'best';
   } else {
     qualitySelect.value = 'best';
   }
@@ -482,6 +486,7 @@ downloadBtn.addEventListener('click', async () => {
   if (downloadBtn.disabled) return;
   const mode = effectiveMode();
   const { clip } = selectedClip();
+  const quality = state.formats.qualities.find((q) => String(q.tier) === qualitySelect.value);
 
   clearStatus();
   show(resultCard, false);
@@ -492,9 +497,9 @@ downloadBtn.addEventListener('click', async () => {
     url: state.fetchedUrl,
     folder: state.settings.lastFolder,
     mode,
-    height: mode === 'audio' || qualitySelect.value === 'best' ? null : Number(qualitySelect.value),
+    resolution: mode === 'audio' ? null : quality?.res ?? null,
     // "720p" from "720p" or "2160p · 4K", for the file name.
-    qualityLabel: qualitySelect.selectedOptions[0]?.textContent.split(' ')[0] || null,
+    qualityLabel: quality ? quality.label.split(' ')[0] : null,
     audioFormat: state.settings.audioFormat,
     videoCodec: state.settings.videoCodec,
     clip,
@@ -531,9 +536,10 @@ window.api.onDownloadProgress((p) => {
   setProgress({ percent: p.percent, stage, detail });
 });
 
-window.api.onDownloadComplete(({ filePath }) => {
+window.api.onDownloadComplete(({ filePath, existing }) => {
   setDownloading(false);
   state.lastFile = filePath;
+  $('result-title').textContent = existing ? 'Already in this folder' : 'Saved';
   resultFile.textContent = filePath ? filePath.split('/').pop() : 'Download finished';
   resultFile.title = filePath || '';
   $('reveal-btn').disabled = !filePath;

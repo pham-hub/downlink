@@ -8,11 +8,12 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "start": "node scripts/fetch-tools.js --if-missing && electron .",
-    "dev": "node scripts/fetch-tools.js --if-missing && ELECTRON_ENABLE_LOGGING=1 electron .",
+    "start": "node scripts/ensure-electron.js && node scripts/fetch-tools.js --if-missing && electron .",
+    "dev": "node scripts/ensure-electron.js && node scripts/fetch-tools.js --if-missing && ELECTRON_ENABLE_LOGGING=1 electron .",
     "fetch-tools": "node scripts/fetch-tools.js",
-    "icon": "electron scripts/make-icon.js",
+    "icon": "node scripts/ensure-electron.js && electron scripts/make-icon.js",
     "dist": "node scripts/fetch-tools.js --all && electron-builder",
+    "dist:signed": "node scripts/fetch-tools.js --all && electron-builder --config electron-builder.signed.js",
     "pack": "node scripts/fetch-tools.js && electron-builder --dir",
     "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Downlink.app\" && cp -R \"dist/mac-arm64/Downlink.app\" /Applications/"
   },

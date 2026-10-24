@@ -15,12 +15,15 @@ const AUDIO_FORMATS = {
   wav: { selector: 'ba/b', extra: [], coverArt: false },
 };
 
-// Sort order per codec preference. 'best' keeps yt-dlp's default codec ranking (AV1 > VP9 > H.264),
-// which looks noticeably sharper at YouTube's low bitrates; 'compatible' forces H.264 so QuickTime and
-// older devices can always play the file.
+// Sort order per codec preference. 'best' ranks codecs the way yt-dlp does by default (AV1 > VP9 >
+// H.264), but ahead of the site's own ranking, which otherwise picks H.264 at some sizes; AV1/VP9 look
+// noticeably sharper at YouTube's low bitrates. 'compatible' puts H.264 ahead of resolution so
+// QuickTime and older devices can always play the file, even though YouTube's H.264 stops at 1080p.
+// A chosen quality is a sort preference ("res:1080": the largest at or below 1080 on the short
+// side) rather than a [height<=] filter, so vertical videos and odd sizes match too.
 const VIDEO_SORT = {
-  best: 'res,fps',
-  compatible: 'res,fps,vcodec:h264',
+  best: (res) => `${res},fps,hdr:12,vcodec`,
+  compatible: (res) => `vcodec:h264,${res},fps`,
 };
 
 const PROCESSING_STEPS = /^\[(Merger|ExtractAudio|VideoRemuxer|VideoConvertor|Metadata|EmbedThumbnail|ThumbnailsConvertor|FixupM3u8|FixupM4a|FixupStretched)\]/;
@@ -80,12 +83,14 @@ const ERROR_MESSAGES = [
   [/Private video|Sign in to confirm your age|This video is unavailable|Video unavailable/i, 'This video is private, age-restricted, or unavailable.'],
   [/logged-in|--cookies|\blogin required\b|\blog in\b|\bsign in\b/i, 'This site only allows downloads when signed in, which the app doesn\'t support.'],
   [/Premieres in|live event will begin|This live event/i, "This video hasn't started yet."],
+  [/live stream recording is not available|is currently live|stream is live/i, "This is a live stream. It can be downloaded once it's over."],
+  [/geo.?restrict|not available in your (country|region)|from your location/i, "This video was removed or isn't available in your country."],
   [/Requested format is not available/i, "That quality isn't available for this video. Try Best available."],
   [/HTTP Error 429/i, 'The site is limiting requests. Wait a few minutes and try again.'],
   [/HTTP Error 403/i, 'The site refused the download (HTTP 403). Try again in a few minutes.'],
   [/HTTP Error 404|: Not found/i, "That video wasn't found. Check the link."],
   [/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|nodename nor servname|Failed to resolve|Unable to connect|Connection refused|Network is unreachable|timed out|Temporary failure in name resolution/i,
-    'Network error. Check your internet connection and try again.'],
+    "Couldn't reach the site. Check the link and your internet connection."],
 ];
 
 function mapErrorMessage(raw) {
@@ -96,7 +101,12 @@ function mapErrorMessage(raw) {
   const lines = text.trim().split('\n').filter(Boolean);
   const errorLine = lines.filter((l) => l.startsWith('ERROR:')).pop();
   const last = errorLine || lines[lines.length - 1] || 'yt-dlp failed to process this URL.';
-  return last.replace(/^ERROR:\s*/, '').replace(/^\[[^\]]+\]\s*[^:\s]+:\s*/, '');
+  // ...and minus advice meant for command-line users ("You might want to try ... --proxy").
+  return last
+    .replace(/^ERROR:\s*/, '')
+    .replace(/^\[[^\]]+\]\s*[^:\s]+:\s*/, '')
+    .replace(/\s*(You might want to|Use --|Try --|See https?:|please report|Confirm you are on the latest).*$/i, '')
+    .replace(/[\s;,:]+$/, '');
 }
 
 // 80 -> "1m20s", 3725 -> "1h02m05s"; used in clip file names (colons aren't Finder-friendly).
@@ -110,7 +120,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, mode, height, qualityLabel, audioFormat, videoCodec, clip }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, mode, resolution, qualityLabel, audioFormat, videoCodec, clip }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -122,12 +132,11 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, mode, height, qualityLab
     '--embed-metadata',
     '-P', folder,
   ];
-  const limit = height ? `[height<=${height}]` : '';
-  const sort = VIDEO_SORT[videoCodec] || VIDEO_SORT.best;
+  const sort = (VIDEO_SORT[videoCodec] || VIDEO_SORT.best)(resolution ? `res:${resolution}` : 'res');
   // Non-default choices go in the file name, so e.g. a 720p H.264 copy doesn't collide with
   // (and get skipped as "already downloaded" because of) an earlier best-quality one.
   const tags = [];
-  if (mode !== 'audio' && height && /^\d{3,4}p$/.test(qualityLabel || '')) tags.push(qualityLabel);
+  if (mode !== 'audio' && resolution && /^\d{3,4}p$/.test(qualityLabel || '')) tags.push(qualityLabel);
   if (mode !== 'audio' && videoCodec === 'compatible') tags.push('H.264');
 
   if (mode === 'audio') {
@@ -136,12 +145,14 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, mode, height, qualityLab
     args.push('-f', spec.selector, '-x', '--audio-format', fmt, ...spec.extra);
     if (spec.coverArt) args.push('--embed-thumbnail');
   } else if (mode === 'video') {
-    args.push('-f', `bv${limit}/bv`, '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
+    args.push('-f', 'bv', '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
     tags.push('video only');
   } else {
     // AAC audio either way so the .mp4 plays in QuickTime; the video codec follows the user's preference.
+    // A video-only stream plus the best audio first: with "bv*" the AAC preference would pick a combined
+    // format instead (YouTube's 360p one has 96 kbps audio). Then combined formats, then silent video.
     args.push(
-      '-f', `bv*${limit}+ba/b${limit}/b`,
+      '-f', 'bv+ba/b/bv*',
       '-S', `${sort},acodec:aac`,
       '--merge-output-format', 'mp4',
       '--embed-thumbnail'
@@ -153,13 +164,20 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, mode, height, qualityLab
     const end = clip.end == null ? 'inf' : clip.end;
     // Cut on the exact times rather than the nearest keyframe/seek point (audio snaps too).
     args.push('--download-sections', `*${start}-${end}`, '--force-keyframes-at-cuts');
+    // Exact cuts make ffmpeg re-encode the clip, and its defaults (x264 CRF 23, Opus at 96 kbps)
+    // are visibly and audibly worse than the source. Encode close to it instead.
+    const reencode = { audio: '-b:a 256k', video: '-crf 18' }[mode] || '-crf 18 -b:a 256k';
+    args.push('--downloader-args', `ffmpeg_o:${reencode}`);
     tags.push(`clip ${compactTime(start)}-${clip.end == null ? 'end' : compactTime(clip.end)}`);
   }
 
   // macOS allows 255 bytes per file name. Cap the title in bytes (long non-English titles use 3+
   // bytes per character), leaving room for the tags and yt-dlp's temporary ".f140.m4a.part" names.
   const suffix = tags.length ? ` (${tags.join(', ')})` : '';
-  args.push('-o', `%(title).170B${suffix}.%(ext)s`, '--', url);
+  // Leading dots ("...Baby One More Time") would make a file Finder hides. The file name drops them;
+  // the title tag inside the file keeps them.
+  args.push('--parse-metadata', '%(title)s:%(filetitle)s', '--replace-in-metadata', 'filetitle', '^[\\s.]+', '');
+  args.push('-o', `%(filetitle).170B${suffix}.%(ext)s`, '--', url);
   return args;
 }
 
@@ -199,9 +217,12 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
   // Own process group, so cancelling also stops the ffmpeg yt-dlp spawns.
   const child = spawn(ytDlpPath, args, { detached: true, env });
 
-  const clipLength = clip ? (clip.end == null ? duration : clip.end) - (clip.start || 0) : null;
+  // Unknown when the site doesn't say how long the video is and the clip runs to the end.
+  const clipEnd = clip && (clip.end == null ? duration : clip.end);
+  const clipLength = clipEnd ? clipEnd - (clip.start || 0) : null;
   const touched = new Set();
   let finalPath = null;
+  let existing = false;
   let cancelled = false;
   let finished = false;
   let streams = 1;
@@ -212,6 +233,11 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
   function handleLine(line) {
     if (line.startsWith(FILE_MARKER)) {
       finalPath = line.slice(FILE_MARKER.length).trim();
+      return;
+    }
+    // Same video, same options, same folder: yt-dlp keeps the file that's there.
+    if (/^\[download\] .+ has already been downloaded$/.test(line)) {
+      existing = true;
       return;
     }
     const formatsMatch = line.match(/Downloading \d+ format\(s\):\s*(\S+)/);
@@ -264,7 +290,7 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
     const text = chunk.toString();
     stderrBuffer = (stderrBuffer + text).slice(-20000);
     // Clips are downloaded by ffmpeg, which reports elapsed media time instead of a percentage.
-    if (clipLength) {
+    if (clipLength > 0) {
       const times = [...text.matchAll(/time=(\d+):(\d+):([\d.]+)/g)];
       const last = times[times.length - 1];
       if (last) {
@@ -289,7 +315,7 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
       removeLeftovers(touched, startedAt);
       onCancel();
     } else if (code === 0) {
-      onComplete({ filePath: finalPath });
+      onComplete({ filePath: finalPath, existing });
     } else {
       // Don't leave half-downloaded pieces or stray thumbnails behind after a failure.
       removeLeftovers(touched, startedAt);
