@@ -56,4 +56,4 @@ xcrun stapler staple dist/Downlink-arm64.dmg
 - **Background updates.** The app downloads newer yt-dlp and Deno releases into `~/Library/Application Support/Downlink/tools` (checksum-verified). Those run as separate programs, so they don't need your signature and don't affect the app's.
 - **Unsigned builds.** `npm run dist` (no Developer ID) still makes ad-hoc signed dmgs that need the "Open Anyway" step.
 
-Once signed builds are what people download, the "Open Anyway" install steps in `README.md` (and on the Downlink web page) are no longer needed.
+The published release is the signed Apple Silicon build, so the README and the Downlink web page no longer have "Open Anyway" install steps.

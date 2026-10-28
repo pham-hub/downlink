@@ -4,16 +4,11 @@ A simple Mac app for downloading videos and audio from YouTube, TikTok, SoundClo
 
 ## Download
 
-- [Apple Silicon (M1 and newer)](https://github.com/pham-hub/downlink/releases/latest/download/Downlink-arm64.dmg)
-- [Intel](https://github.com/pham-hub/downlink/releases/latest/download/Downlink-x64.dmg)
-
+[Download for Mac](https://github.com/pham-hub/downlink/releases/latest/download/Downlink-arm64.dmg). Apple Silicon (M1 and newer) only, macOS 12 or later.
 
 ## Install
 
-1. Open the .dmg and drag Downlink into Applications.
-2. Open Downlink. macOS will say it can't verify the app. Click Done.
-3. Go to System Settings > Privacy & Security, scroll down, and click Open Anyway.
-
+Open the .dmg and drag Downlink into Applications.
 
 ## Features
 
