@@ -2,7 +2,6 @@
 // Downloads yt-dlp, Deno and ffmpeg into vendor/<arch>/ so they ship inside the app.
 //
 //   node scripts/fetch-tools.js               this Mac's architecture, refreshed to the latest
-//   node scripts/fetch-tools.js --all         arm64 and x64 (for `npm run dist`)
 //   node scripts/fetch-tools.js --if-missing  skip the network when tools are already there
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +9,7 @@ const sources = require('../src/tool-sources');
 
 const VENDOR = path.join(__dirname, '..', 'vendor');
 const args = process.argv.slice(2);
-const arches = args.includes('--all') ? ['arm64', 'x64'] : [process.arch];
+const arches = ['arm64'];
 const ifMissing = args.includes('--if-missing');
 
 function hasAll(dir) {
