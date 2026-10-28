@@ -1,6 +1,6 @@
 # Signing and notarizing Downlink
 
-This builds `Downlink-arm64.dmg` (Apple Silicon) and `Downlink-x64.dmg` (Intel), signed with your Developer ID and notarized by Apple, so they open without the "can't verify" warning.
+This builds `Downlink-arm64.dmg` (Apple Silicon only), signed with your Developer ID and notarized by Apple, so it opens without the "can't verify" warning.
 
 ## You need
 
@@ -25,7 +25,7 @@ APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx \
 npm run dist:signed
 ```
 
-This downloads the latest yt-dlp and Deno plus the pinned ffmpeg for both architectures. It then builds both apps, signs every binary inside them with your certificate using the hardened runtime, notarizes each app and staples the ticket. Notarizing takes a few minutes per app. The dmgs end up in `dist/`.
+This downloads the latest yt-dlp and Deno plus the pinned ffmpeg. It then builds the app, signs every binary inside it with your certificate using the hardened runtime, notarizes it and staples the ticket. Notarizing takes a few minutes. The dmgs end up in `dist/`.
 
 If you have more than one Developer ID certificate, pick one with `CSC_NAME="Developer ID Application: Your Name (XXXXXXXXXX)"`.
 
@@ -39,8 +39,6 @@ spctl -a -vv -t exec /tmp/dl/Downlink.app      # should say: accepted, source=No
 xcrun stapler validate /tmp/dl/Downlink.app    # should say: The validate action worked!
 hdiutil detach /tmp/dl
 ```
-
-Do the same for `Downlink-x64.dmg`.
 
 Optional: notarize and staple the dmg files too, so the first open also works offline:
 

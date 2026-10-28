@@ -14,10 +14,9 @@ const USER_AGENT = 'downlink-app';
 const FFMPEG_VERSION = '9.0.2';
 const FFMPEG_BASE = {
   arm64: 'https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2',
-  x64: 'https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2',
 };
 
-const DENO_TARGET = { arm64: 'aarch64-apple-darwin', x64: 'x86_64-apple-darwin' };
+const DENO_TARGET = { arm64: 'aarch64-apple-darwin' };
 
 // Folder layout inside a tools directory (bundled or updated).
 const LAYOUT = {
