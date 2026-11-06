@@ -2,17 +2,18 @@
   "name": "downlink",
   "productName": "Downlink",
   "version": "1.0.0",
-  "description": "Downlink: a simple macOS video downloader built on yt-dlp",
+  "description": "Downlink: a simple Mac and Windows video downloader built on yt-dlp",
   "main": "src/main.js",
   "author": "Andrew Pham",
   "license": "MIT",
   "private": true,
   "scripts": {
     "start": "node scripts/ensure-electron.js && node scripts/fetch-tools.js --if-missing && electron .",
-    "dev": "node scripts/ensure-electron.js && node scripts/fetch-tools.js --if-missing && ELECTRON_ENABLE_LOGGING=1 electron .",
+    "dev": "node scripts/ensure-electron.js && node scripts/fetch-tools.js --if-missing && electron --enable-logging .",
     "fetch-tools": "node scripts/fetch-tools.js",
     "icon": "node scripts/ensure-electron.js && electron scripts/make-icon.js",
     "dist": "node scripts/fetch-tools.js && electron-builder",
+    "dist:win": "node scripts/fetch-tools.js && electron-builder --win nsis --x64",
     "dist:signed": "node scripts/fetch-tools.js && electron-builder --config electron-builder.signed.js",
     "pack": "node scripts/fetch-tools.js && electron-builder --dir",
     "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Downlink.app\" && cp -R \"dist/mac-arm64/Downlink.app\" /Applications/"
@@ -56,6 +57,23 @@
       "identity": null,
       "artifactName": "${productName}-${arch}.${ext}",
       "minimumSystemVersion": "12.0"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-Setup-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     },
     "dmg": {
       "title": "${productName} ${version}"

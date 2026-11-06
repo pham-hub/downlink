@@ -44,7 +44,7 @@ function fetchInfo({ ytDlpPath, denoPath }, url) {
     execFile(
       ytDlpPath,
       [...BASE_ARGS, ...runtimeArgs(denoPath), '--dump-single-json', '--flat-playlist', '--', url],
-      { maxBuffer: 1024 * 1024 * 50, timeout: FETCH_TIMEOUT },
+      { maxBuffer: 1024 * 1024 * 50, timeout: FETCH_TIMEOUT, windowsHide: true },
       (err, stdout, stderr) => {
         if (err && err.killed) {
           reject(new Error('This link took too long to load. Check it and your connection, then try again.'));
@@ -213,9 +213,11 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
   const startedAt = Date.now();
   // The bundled static ffmpeg has no built-in certificate store, and it fetches the stream
   // itself for clips; point it at macOS's so those HTTPS requests verify.
-  const env = { SSL_CERT_FILE: '/etc/ssl/cert.pem', ...process.env };
-  // Own process group, so cancelling also stops the ffmpeg yt-dlp spawns.
-  const child = spawn(ytDlpPath, args, { detached: true, env });
+  const IS_WIN = process.platform === 'win32';
+  const env = IS_WIN ? { ...process.env } : { SSL_CERT_FILE: '/etc/ssl/cert.pem', ...process.env };
+  // Own process group (macOS), so cancelling also stops the ffmpeg yt-dlp spawns. On Windows
+  // taskkill /T takes down the whole tree instead, and the console window stays hidden.
+  const child = spawn(ytDlpPath, args, { detached: !IS_WIN, windowsHide: true, env });
 
   // Unknown when the site doesn't say how long the video is and the clip runs to the end.
   const clipEnd = clip && (clip.end == null ? duration : clip.end);
@@ -327,6 +329,10 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
     cancel() {
       if (cancelled) return;
       cancelled = true;
+      if (IS_WIN) {
+        execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+        return;
+      }
       try {
         process.kill(-child.pid, 'SIGINT');
       } catch {
