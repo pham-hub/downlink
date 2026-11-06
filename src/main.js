@@ -23,8 +23,13 @@ function createWindow() {
     useContentSize: true,
     resizable: false,
     show: false,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
+      : {
+          // Windows: hide the native bar but keep the system minimize/close buttons, dark to match.
+          titleBarStyle: 'hidden',
+          titleBarOverlay: { color: '#00000000', symbolColor: '#9fb3c4', height: 50 },
+        }),
     backgroundColor: '#04080c',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -35,6 +40,7 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('focus', () => mainWindow.flashFrame(false));
 
   // The window only ever shows the app's own page. Without this, dropping a link onto it would
   // load that website in place of the app (the page handles dropped links itself instead).
@@ -67,6 +73,11 @@ function createWindow() {
 // mid-download would lose track of it, and zoom breaks the fixed-width layout. Edit stays for
 // copy and paste.
 function setMenu() {
+  if (process.platform !== 'darwin') {
+    // No visible menu bar on Windows; the Edit menu still wires up Ctrl+C / Ctrl+V.
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }]));
+    return;
+  }
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }])
   );
@@ -74,6 +85,8 @@ function setMenu() {
 
 app.whenReady().then(() => {
   setMenu();
+  // Needed for toast notifications to show the app's name on Windows.
+  if (process.platform === 'win32') app.setAppUserModelId('com.andrewpham.downlink');
   // The packaged app gets its icon from build/icon.icns; this covers `npm start`.
   const devIcon = path.join(__dirname, '..', 'build', 'icon.png');
   if (app.dock && !app.isPackaged && fs.existsSync(devIcon)) app.dock.setIcon(devIcon);
@@ -165,6 +178,20 @@ ipcMain.handle('choose-folder', async () => {
   return folder;
 });
 
+// Windows touches: progress shown on the taskbar button, and the button flashes when a
+// download finishes while the window is in the background.
+function setTaskbarProgress(progress) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (progress.stage === 'processing') mainWindow.setProgressBar(2, { mode: 'indeterminate' });
+  else if (Number.isFinite(progress.percent)) mainWindow.setProgressBar(Math.min(progress.percent, 100) / 100);
+}
+
+function clearTaskbar(flash) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setProgressBar(-1);
+  if (flash && !mainWindow.isFocused()) mainWindow.flashFrame(true);
+}
+
 function notifyComplete(filePath) {
   if (!Notification.isSupported() || !mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return;
   const notification = new Notification({
@@ -199,19 +226,25 @@ ipcMain.handle('start-download', async (event, payload) => {
         duration: payload.duration,
       },
       {
-        onProgress: (progress) => send('download-progress', progress),
+        onProgress: (progress) => {
+          setTaskbarProgress(progress);
+          send('download-progress', progress);
+        },
         onComplete: (result) => {
           activeDownload = null;
+          clearTaskbar(true);
           if (result.filePath) savedFiles.add(result.filePath);
           send('download-complete', result);
           notifyComplete(result.filePath);
         },
         onError: (message) => {
           activeDownload = null;
+          clearTaskbar(false);
           send('download-error', { message });
         },
         onCancel: () => {
           activeDownload = null;
+          clearTaskbar(false);
           if (quitWhenCancelled) app.quit();
           else send('download-cancelled');
         },

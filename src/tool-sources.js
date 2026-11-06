@@ -11,18 +11,27 @@ const USER_AGENT = 'downlink-app';
 
 // Signed and notarized static builds. Pinned: ffmpeg rarely matters for downloads, and the
 // site's "latest" redirects aren't reliable. Bump the folder names to upgrade.
+const IS_WIN = process.platform === 'win32';
 const FFMPEG_VERSION = '9.0.2';
 const FFMPEG_BASE = {
   arm64: 'https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2',
 };
+// Windows: BtbN's static GPL builds (zip holds <folder>/bin/ffmpeg.exe and ffprobe.exe).
+// Pinned to the ffmpeg 9.0.2 release build (same version as the Mac app). BtbN prunes old
+// autobuild tags eventually; if this 404s, pick a newer n9.x asset from their releases page.
+const FFMPEG_WIN_BASE = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-06-12-50';
+const FFMPEG_WIN_ZIP = 'ffmpeg-n9.0.2-47-gb204e94e90-win64-gpl-9.0.zip';
 
-const DENO_TARGET = { arm64: 'aarch64-apple-darwin' };
+const DENO_TARGET = { arm64: 'aarch64-apple-darwin', x64: 'x86_64-pc-windows-msvc' };
+
+// The architecture folder name used under vendor/ (matches electron-builder's ${arch}).
+const TARGET_ARCH = IS_WIN ? 'x64' : 'arm64';
 
 // Folder layout inside a tools directory (bundled or updated).
 const LAYOUT = {
-  ytDlp: path.join('yt-dlp', 'yt-dlp_macos'),
-  deno: path.join('deno', 'deno'),
-  ffmpeg: path.join('ffmpeg', 'ffmpeg'),
+  ytDlp: IS_WIN ? path.join('yt-dlp', 'yt-dlp.exe') : path.join('yt-dlp', 'yt-dlp_macos'),
+  deno: IS_WIN ? path.join('deno', 'deno.exe') : path.join('deno', 'deno'),
+  ffmpeg: IS_WIN ? path.join('ffmpeg', 'ffmpeg.exe') : path.join('ffmpeg', 'ffmpeg'),
 };
 
 // Compares dotted versions numerically, so "2026.8.19" equals "2026.08.19".
@@ -73,6 +82,11 @@ function sha256(buffer) {
 
 // Checksum files are "<hash>  <filename>" lines (or just "<hash>").
 function expectedHash(sumsText, fileName) {
+  // Deno's Windows checksum is PowerShell Get-FileHash output ("Hash : <sha256>") for that one file.
+  const ps = /^\s*Hash\s*:\s*([0-9a-f]{64})\s*$/im.exec(sumsText);
+  if (ps && new RegExp(`Path\\s*:.*${fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(sumsText)) {
+    return ps[1].toLowerCase();
+  }
   for (const line of sumsText.split('\n')) {
     const [hash, name] = line.trim().split(/\s+/);
     if (hash && (!name || name.replace(/^\*/, '') === fileName)) return hash.toLowerCase();
@@ -90,7 +104,11 @@ async function downloadVerified(url, sumsUrl, fileName) {
 
 function unzip(zipPath, destDir) {
   return new Promise((resolve, reject) => {
-    execFile('/usr/bin/ditto', ['-x', '-k', zipPath, destDir], (err) => (err ? reject(err) : resolve()));
+    // Windows 10+ ships bsdtar, which reads zip files.
+    const [cmd, args] = IS_WIN
+      ? [path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zipPath, '-C', destDir]]
+      : ['/usr/bin/ditto', ['-x', '-k', zipPath, destDir]];
+    execFile(cmd, args, (err) => (err ? reject(err) : resolve()));
   });
 }
 
@@ -107,7 +125,7 @@ async function unzipBuffer(data, destDir) {
 }
 
 function makeExecutable(filePath) {
-  fs.chmodSync(filePath, 0o755);
+  if (!IS_WIN) fs.chmodSync(filePath, 0o755);
 }
 
 function latestYtDlp() {
@@ -151,11 +169,12 @@ function relinkFrameworks(dir) {
 // the single-file build unpacks itself on every run and takes ~7s.
 async function installYtDlp(version, toolsDir) {
   const base = `https://github.com/yt-dlp/yt-dlp/releases/download/${version}`;
-  const data = await downloadVerified(`${base}/yt-dlp_macos.zip`, `${base}/SHA2-256SUMS`, 'yt-dlp_macos.zip');
+  const zipName = IS_WIN ? 'yt-dlp_win.zip' : 'yt-dlp_macos.zip';
+  const data = await downloadVerified(`${base}/${zipName}`, `${base}/SHA2-256SUMS`, zipName);
   const dir = path.join(toolsDir, 'yt-dlp');
   fs.rmSync(dir, { recursive: true, force: true });
   await unzipBuffer(data, dir);
-  relinkFrameworks(path.join(dir, '_internal'));
+  if (!IS_WIN) relinkFrameworks(path.join(dir, '_internal'));
   makeExecutable(path.join(toolsDir, LAYOUT.ytDlp));
 }
 
@@ -173,6 +192,19 @@ async function installDeno(version, arch, toolsDir) {
 async function installFfmpeg(arch, toolsDir) {
   const dir = path.join(toolsDir, 'ffmpeg');
   fs.rmSync(dir, { recursive: true, force: true });
+  if (IS_WIN) {
+    const data = await downloadVerified(`${FFMPEG_WIN_BASE}/${FFMPEG_WIN_ZIP}`, `${FFMPEG_WIN_BASE}/checksums.sha256`, FFMPEG_WIN_ZIP);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vd-ffmpeg-'));
+    try {
+      await unzipBuffer(data, tmp);
+      const bin = path.join(tmp, fs.readdirSync(tmp)[0], 'bin');
+      fs.mkdirSync(dir, { recursive: true });
+      for (const exe of ['ffmpeg.exe', 'ffprobe.exe']) fs.copyFileSync(path.join(bin, exe), path.join(dir, exe));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    return;
+  }
   for (const tool of ['ffmpeg', 'ffprobe']) {
     const url = `${FFMPEG_BASE[arch]}/${tool}.zip`;
     const data = await downloadVerified(url, `${url}.sha256`, `${tool}.zip`);
@@ -195,6 +227,7 @@ function writeVersions(toolsDir, versions) {
 
 module.exports = {
   FFMPEG_VERSION,
+  TARGET_ARCH,
   LAYOUT,
   compareVersions,
   latestYtDlp,

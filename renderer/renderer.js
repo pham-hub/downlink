@@ -50,7 +50,7 @@ const AUDIO_HINTS = {
 };
 
 const CODEC_HINTS = {
-  best: 'AV1 or VP9 when available. Sharpest picture at the same size; needs a recent Mac or player.',
+  best: 'AV1 or VP9 when available. Sharpest picture at the same size; needs a recent PC or player.',
   compatible: 'H.264. Plays everywhere, including older devices, but looks softer and stops at 1080p on YouTube.',
 };
 

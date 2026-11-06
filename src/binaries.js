@@ -8,14 +8,14 @@ const sources = require('./tool-sources');
 // changes with app releases.
 const UPDATABLE = {
   ytDlp: { latest: sources.latestYtDlp, install: (version, dir) => sources.installYtDlp(version, dir) },
-  deno: { latest: sources.latestDeno, install: (version, dir) => sources.installDeno(version, process.arch, dir) },
+  deno: { latest: sources.latestDeno, install: (version, dir) => sources.installDeno(version, sources.TARGET_ARCH, dir) },
 };
 
 const LABELS = { ytDlp: 'yt-dlp', deno: 'Deno', ffmpeg: 'ffmpeg' };
 
 // The copies shipped inside the app (fetched by scripts/fetch-tools.js).
 function bundledDir() {
-  return app.isPackaged ? path.join(process.resourcesPath, 'bin') : path.join(__dirname, '..', 'vendor', process.arch);
+  return app.isPackaged ? path.join(process.resourcesPath, 'bin') : path.join(__dirname, '..', 'vendor', sources.TARGET_ARCH);
 }
 
 // Newer copies downloaded after install, one folder per tool version.
@@ -112,7 +112,7 @@ function removeStaleCopies() {
 
 function runsOk(file) {
   return new Promise((resolve, reject) => {
-    execFile(file, ['--version'], { timeout: 60000 }, (err) => (err ? reject(err) : resolve()));
+    execFile(file, ['--version'], { timeout: 60000, windowsHide: true }, (err) => (err ? reject(err) : resolve()));
   });
 }
 

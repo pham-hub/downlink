@@ -9,7 +9,7 @@ const sources = require('../src/tool-sources');
 
 const VENDOR = path.join(__dirname, '..', 'vendor');
 const args = process.argv.slice(2);
-const arches = ['arm64'];
+const arches = [sources.TARGET_ARCH];
 const ifMissing = args.includes('--if-missing');
 
 function hasAll(dir) {
