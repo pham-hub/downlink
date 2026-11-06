@@ -1,7 +1,7 @@
 {
   "name": "downlink",
   "productName": "Downlink",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "Downlink: a simple Mac and Windows video downloader built on yt-dlp",
   "main": "src/main.js",
   "author": "Andrew Pham",
