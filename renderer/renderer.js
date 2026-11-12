@@ -662,8 +662,15 @@ const CODEC_LABELS = { h264: 'H.264', hevc: 'HEVC', vp9: 'VP9', av1: 'AV1', othe
 
 // Best compatible (H.264) and Best quality (any codec) come first, then one entry per height.
 // The Advanced list has every individual format for the rare case that needs one.
+// A converting preset re-encodes whatever it downloads, so the codec choice means nothing there:
+// the picker offers "Best available" and the heights instead of compatible/best.
+function presetConverts() {
+  return effectiveMode() === 'both' && ['h264', 'prores422', 'prores422hq', 'still'].includes(state.preset);
+}
+
 function renderQualityOptions() {
   const f = state.formats;
+  const converting = presetConverts();
   const qualities = f ? f.qualities.filter((q) => PREFERRED_TIERS.includes(q.tier) || f.qualities.length < 3) : [];
   qualitySelect.innerHTML = '';
   const add = (value, text) => {
@@ -672,13 +679,18 @@ function renderQualityOptions() {
     option.textContent = text;
     qualitySelect.appendChild(option);
   };
-  add('best-compatible', 'Best compatible (H.264)');
-  add('best-quality', 'Best quality (any codec)');
-  qualities.forEach((q) => add(`tier-${q.tier}`, q.h264 ? q.label : `${q.label} · no H.264`));
+  if (converting) {
+    add('best-quality', 'Best available');
+    qualities.forEach((q) => add(`tier-${q.tier}`, q.label));
+  } else {
+    add('best-compatible', 'Best compatible (H.264)');
+    add('best-quality', 'Best quality (any codec)');
+    qualities.forEach((q) => add(`tier-${q.tier}`, q.h264 ? q.label : `${q.label} · no H.264`));
+  }
 
   // Remembered choice: the same height if it's offered, else the nearest one below.
   const saved = state.settings.defaultQuality || 'best-compatible';
-  let choice = 'best-compatible';
+  let choice = converting ? 'best-quality' : 'best-compatible';
   if (saved === 'best-quality') choice = saved;
   else if (saved.startsWith('tier-')) {
     const match = qualities.find((q) => q.tier <= Number(saved.slice(5)));
@@ -716,6 +728,7 @@ function selectedQuality() {
 // AV1, VP9 and HDR streams are the ones some editors and media servers can't open.
 function renderQualityHint() {
   const f = state.formats;
+  if (presetConverts()) return show(qualityHint, false);
   const q = selectedQuality();
   let risky = false;
   if (q.kind === 'format') {
@@ -942,7 +955,7 @@ wireSegmented(audioControl, 'format', (format) => {
 
 qualitySelect.addEventListener('change', () => {
   formatSelect.value = '';
-  saveSetting('defaultQuality', qualitySelect.value);
+  if (!(presetConverts() && qualitySelect.value === 'best-quality')) saveSetting('defaultQuality', qualitySelect.value);
   renderQualityHint();
 });
 
