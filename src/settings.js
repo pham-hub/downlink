@@ -5,7 +5,7 @@ const os = require('os');
 
 const DEFAULTS = {
   mode: 'both',
-  quality: 'best',
+  quality: 'best', // v1.0; replaced by defaultQuality
   audioFormat: 'mp3',
   videoCodec: 'best',
   // v1.1

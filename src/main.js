@@ -147,6 +147,30 @@ function validClip(clip) {
 // The window follows a job through snapshots; it never sees passwords or process handles.
 jobs.on('update', (snapshot) => send('job-update', snapshot));
 
+function bestFps(formats) {
+  const top = formats.options[0];
+  return top && top.fps ? top.fps : undefined;
+}
+
+// The quality choice from the window, checked against what the link really offers.
+function resolveQuality(job, quality) {
+  const q = quality || {};
+  if (q.kind === 'format') {
+    const option = (job.formats || []).find((f) => f.id === q.formatId);
+    if (option) {
+      return {
+        formatId: option.id,
+        formatHasAudio: !!option.hasAudio,
+        formatTag: `${option.height}p, ${option.vcodec === 'other' ? 'format ' + option.id : option.vcodec.toUpperCase().replace('H264', 'H.264')}`,
+        videoCodec: 'best',
+        resolution: null,
+      };
+    }
+  }
+  const resolution = q.kind === 'tier' && Number.isInteger(q.resolution) ? q.resolution : null;
+  return { videoCodec: q.kind === 'best' ? 'best' : 'compatible', resolution, qualityLabel: q.label };
+}
+
 function errorContext(job, source = 'ytdlp') {
   return { resolver: job.resolver, source, sniffEnabled: settings.getSettings().sniffFallback };
 }
@@ -176,7 +200,13 @@ ipcMain.handle('fetch-info', async (event, url) => {
     // The user moved on to another link while this one loaded.
     if (jobs.get(job.id) !== job) return { success: false, stale: true };
     const formats = summarizeFormats(info);
-    jobs.transition(job, 'ready', { title: info.title, durationSec: info.duration || undefined, task: undefined });
+    jobs.transition(job, 'ready', {
+      title: info.title,
+      durationSec: info.duration || undefined,
+      fps: bestFps(formats),
+      formats: formats.options,
+      task: undefined,
+    });
     return {
       success: true,
       jobId: job.id,
@@ -263,10 +293,8 @@ ipcMain.handle('start-download', async (event, payload) => {
         folder: payload.folder,
         tempDir: jobs.tempDir(job),
         mode: payload.mode,
-        resolution: Number.isInteger(payload.resolution) ? payload.resolution : null,
-        qualityLabel: payload.qualityLabel,
+        ...resolveQuality(job, payload.quality),
         audioFormat: payload.audioFormat,
-        videoCodec: payload.videoCodec,
         clip: validClip(payload.clip),
         duration: job.durationSec,
       },

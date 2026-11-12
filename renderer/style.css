@@ -836,3 +836,15 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.advanced-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.advanced-wrap .select-wrap {
+  align-self: stretch;
+}

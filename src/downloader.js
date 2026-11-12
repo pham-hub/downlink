@@ -94,7 +94,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolution, qualityLabel, audioFormat, videoCodec, clip }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -115,8 +115,10 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolutio
   // Non-default choices go in the file name, so e.g. a 720p H.264 copy doesn't collide with
   // (and get skipped as "already downloaded" because of) an earlier best-quality one.
   const tags = [];
-  if (mode !== 'audio' && resolution && /^\d{3,4}p$/.test(qualityLabel || '')) tags.push(qualityLabel);
-  if (mode !== 'audio' && videoCodec === 'compatible') tags.push('H.264');
+  // Best compatible (H.264) is the default and carries no tag.
+  if (mode !== 'audio' && formatId) tags.push(formatTag || `format ${formatId}`);
+  else if (mode !== 'audio' && resolution && /^\d{3,4}p$/.test(qualityLabel || '')) tags.push(qualityLabel);
+  else if (mode !== 'audio' && videoCodec === 'best') tags.push('best quality');
 
   if (mode === 'audio') {
     const fmt = AUDIO_FORMATS[audioFormat] ? audioFormat : 'mp3';
@@ -124,14 +126,15 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolutio
     args.push('-f', spec.selector, '-x', '--audio-format', fmt, ...spec.extra);
     if (spec.coverArt) args.push('--embed-thumbnail');
   } else if (mode === 'video') {
-    args.push('-f', 'bv', '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
+    args.push('-f', formatId || 'bv', '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
     tags.push('video only');
   } else {
     // AAC audio either way so the .mp4 plays in QuickTime; the video codec follows the user's preference.
     // A video-only stream plus the best audio first: with "bv*" the AAC preference would pick a combined
     // format instead (YouTube's 360p one has 96 kbps audio). Then combined formats, then silent video.
     args.push(
-      '-f', 'bv+ba/b/bv*',
+      // A format picked from the Advanced list is used as chosen; a video-only one gets the best audio.
+      '-f', formatId ? (formatHasAudio ? formatId : `${formatId}+ba/${formatId}`) : 'bv+ba/b/bv*',
       '-S', `${sort},acodec:aac`,
       '--merge-output-format', 'mp4',
       '--embed-thumbnail'

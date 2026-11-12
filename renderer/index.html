@@ -58,19 +58,17 @@
 
         <div class="field" id="quality-field">
           <label for="quality-select">Quality</label>
-          <div class="select-wrap">
-            <select id="quality-select"><option value="best">Best available</option></select>
-          </div>
-        </div>
-
-        <div class="field" id="codec-field">
-          <label>Codec</label>
           <div class="field-body">
-            <div class="segmented segmented-sm" id="codec-control" role="radiogroup" aria-label="Video codec">
-              <button type="button" role="radio" data-codec="best">Best quality</button>
-              <button type="button" role="radio" data-codec="compatible">Max compatibility</button>
+            <div class="select-wrap">
+              <select id="quality-select"><option value="best-compatible">Best compatible (H.264)</option></select>
             </div>
-            <p id="codec-hint" class="hint muted"></p>
+            <div id="advanced-wrap" class="advanced-wrap hidden">
+              <button id="advanced-toggle" type="button" class="btn btn-small btn-ghost" aria-expanded="false">Advanced</button>
+              <div id="advanced-body" class="select-wrap hidden">
+                <select id="format-select" aria-label="Individual format"></select>
+              </div>
+            </div>
+            <p id="quality-hint" class="hint muted hidden">May not play in some editors or media servers.</p>
           </div>
         </div>
 

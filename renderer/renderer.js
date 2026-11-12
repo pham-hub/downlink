@@ -16,9 +16,11 @@ const optionsCard = $('options');
 const modeControl = $('mode-control');
 const qualityField = $('quality-field');
 const qualitySelect = $('quality-select');
-const codecField = $('codec-field');
-const codecControl = $('codec-control');
-const codecHint = $('codec-hint');
+const qualityHint = $('quality-hint');
+const advancedWrap = $('advanced-wrap');
+const advancedToggle = $('advanced-toggle');
+const advancedBody = $('advanced-body');
+const formatSelect = $('format-select');
 const audioField = $('audio-field');
 const audioControl = $('audio-control');
 const audioHint = $('audio-hint');
@@ -49,11 +51,6 @@ const AUDIO_HINTS = {
   wav: 'Uncompressed and large. Best for editing. Title and artist tags only.',
 };
 
-const CODEC_HINTS = {
-  best: 'AV1 or VP9 when available. Sharpest picture at the same size; needs a recent PC or player.',
-  compatible: 'H.264. Plays everywhere, including older devices, but looks softer and stops at 1080p on YouTube.',
-};
-
 const STEP_LABELS = {
   Merger: 'Merging video and audio…',
   ExtractAudio: 'Converting audio…',
@@ -68,7 +65,7 @@ const STEP_LABELS = {
 };
 
 const state = {
-  settings: { mode: 'both', quality: 'best', audioFormat: 'mp3', videoCodec: 'best', lastFolder: null },
+  settings: { mode: 'both', defaultQuality: 'best-compatible', audioFormat: 'mp3', lastFolder: null },
   info: null,
   formats: null,
   fetchedUrl: null,
@@ -360,32 +357,78 @@ function effectiveMode() {
   return ['both', 'audio', 'video'].find((m) => modes[m]) || 'both';
 }
 
-function renderQualityOptions() {
-  let qualities = state.formats ? state.formats.qualities : [];
-  // H.264 often stops below the top resolution (1080p on YouTube); don't offer what it can't deliver.
-  if (state.settings.videoCodec === 'compatible' && qualities.some((q) => q.h264)) {
-    qualities = qualities.filter((q) => q.h264);
-  }
-  qualitySelect.innerHTML = '';
-  const best = document.createElement('option');
-  best.value = 'best';
-  best.textContent = qualities.length ? `Best available (${qualities[0].label})` : 'Best available';
-  qualitySelect.appendChild(best);
-  qualities.forEach(({ tier, label }) => {
-    const option = document.createElement('option');
-    option.value = String(tier);
-    option.textContent = label;
-    qualitySelect.appendChild(option);
-  });
+const PREFERRED_TIERS = [4320, 2880, 2160, 1440, 1080, 720, 480];
+const CODEC_LABELS = { h264: 'H.264', hevc: 'HEVC', vp9: 'VP9', av1: 'AV1', other: '' };
 
-  // Remembered quality: pick the highest available at or below it.
-  const preferred = state.settings.quality;
-  if (preferred !== 'best') {
-    const match = qualities.find((q) => q.tier <= Number(preferred));
-    qualitySelect.value = match ? String(match.tier) : 'best';
-  } else {
-    qualitySelect.value = 'best';
+// Best compatible (H.264) and Best quality (any codec) come first, then one entry per height.
+// The Advanced list has every individual format for the rare case that needs one.
+function renderQualityOptions() {
+  const f = state.formats;
+  const qualities = f ? f.qualities.filter((q) => PREFERRED_TIERS.includes(q.tier) || f.qualities.length < 3) : [];
+  qualitySelect.innerHTML = '';
+  const add = (value, text) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    qualitySelect.appendChild(option);
+  };
+  add('best-compatible', 'Best compatible (H.264)');
+  add('best-quality', 'Best quality (any codec)');
+  qualities.forEach((q) => add(`tier-${q.tier}`, q.h264 ? q.label : `${q.label} · no H.264`));
+
+  // Remembered choice: the same height if it's offered, else the nearest one below.
+  const saved = state.settings.defaultQuality || 'best-compatible';
+  let choice = 'best-compatible';
+  if (saved === 'best-quality') choice = saved;
+  else if (saved.startsWith('tier-')) {
+    const match = qualities.find((q) => q.tier <= Number(saved.slice(5)));
+    if (match) choice = `tier-${match.tier}`;
   }
+  qualitySelect.value = choice;
+
+  formatSelect.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = 'Use the quality above';
+  formatSelect.appendChild(auto);
+  ((f && f.options) || []).forEach((o) => {
+    const option = document.createElement('option');
+    option.value = o.id;
+    option.textContent = `${o.label}${o.hasAudio ? ' · with audio' : ''}`;
+    formatSelect.appendChild(option);
+  });
+  show(advancedWrap, !!(f && f.options && f.options.length));
+  renderQualityHint();
+}
+
+function selectedQuality() {
+  const formatId = formatSelect.value;
+  if (formatId) return { kind: 'format', formatId };
+  const value = qualitySelect.value;
+  if (value.startsWith('tier-')) {
+    const tier = Number(value.slice(5));
+    const q = state.formats && state.formats.qualities.find((x) => x.tier === tier);
+    return { kind: 'tier', resolution: q ? q.res : null, label: q ? q.label.split(' ')[0] : null };
+  }
+  return { kind: value === 'best-quality' ? 'best' : 'compatible' };
+}
+
+// AV1, VP9 and HDR streams are the ones some editors and media servers can't open.
+function renderQualityHint() {
+  const f = state.formats;
+  const q = selectedQuality();
+  let risky = false;
+  if (q.kind === 'format') {
+    const o = f.options.find((x) => x.id === q.formatId);
+    risky = !!o && (o.vcodec === 'av1' || o.vcodec === 'vp9' || o.hdr);
+  } else if (q.kind === 'best') {
+    risky = !!(f && f.bestNeedsBadge);
+  } else if (q.kind === 'tier') {
+    const tier = qualitySelect.value.slice(5);
+    const entry = f && f.qualities.find((x) => String(x.tier) === tier);
+    risky = !!entry && !entry.h264;
+  }
+  show(qualityHint, risky);
 }
 
 function renderOptions() {
@@ -401,7 +444,6 @@ function renderOptions() {
   });
 
   show(qualityField, mode !== 'audio');
-  show(codecField, mode !== 'audio');
   show(audioField, mode === 'audio');
   renderQualityOptions();
 
@@ -411,13 +453,6 @@ function renderOptions() {
     btn.tabIndex = selected ? 0 : -1;
   });
   audioHint.textContent = AUDIO_HINTS[state.settings.audioFormat] || '';
-
-  codecControl.querySelectorAll('button').forEach((btn) => {
-    const selected = btn.dataset.codec === state.settings.videoCodec;
-    btn.setAttribute('aria-checked', String(selected));
-    btn.tabIndex = selected ? 0 : -1;
-  });
-  codecHint.textContent = CODEC_HINTS[state.settings.videoCodec] || '';
 
   clipEnd.placeholder = state.info && state.info.duration ? formatDuration(state.info.duration) : 'end';
   validateClip();
@@ -498,13 +533,22 @@ wireSegmented(audioControl, 'format', (format) => {
   renderOptions();
 });
 
-wireSegmented(codecControl, 'codec', (codec) => {
-  saveSetting('videoCodec', codec);
-  renderOptions();
+qualitySelect.addEventListener('change', () => {
+  formatSelect.value = '';
+  saveSetting('defaultQuality', qualitySelect.value);
+  renderQualityHint();
 });
 
-qualitySelect.addEventListener('change', () => {
-  saveSetting('quality', qualitySelect.value);
+formatSelect.addEventListener('change', renderQualityHint);
+
+advancedToggle.addEventListener('click', () => {
+  const open = advancedBody.classList.contains('hidden');
+  show(advancedBody, open);
+  advancedToggle.setAttribute('aria-expanded', String(open));
+  if (!open) {
+    formatSelect.value = '';
+    renderQualityHint();
+  }
 });
 
 clipToggle.addEventListener('change', () => {
@@ -558,7 +602,6 @@ downloadBtn.addEventListener('click', async () => {
   if (downloadBtn.disabled) return;
   const mode = effectiveMode();
   const { clip } = selectedClip();
-  const quality = state.formats.qualities.find((q) => String(q.tier) === qualitySelect.value);
 
   clearStatus();
   show(resultCard, false);
@@ -569,11 +612,8 @@ downloadBtn.addEventListener('click', async () => {
     jobId: state.jobId,
     folder: state.settings.lastFolder,
     mode,
-    resolution: mode === 'audio' ? null : quality?.res ?? null,
-    // "720p" from "720p" or "2160p · 4K", for the file name.
-    qualityLabel: quality ? quality.label.split(' ')[0] : null,
+    quality: selectedQuality(),
     audioFormat: state.settings.audioFormat,
-    videoCodec: state.settings.videoCodec,
     clip,
     duration: state.info.duration,
   });
