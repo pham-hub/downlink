@@ -11,13 +11,18 @@ The apps aren't code-signed, so the first launch shows a warning. On Windows, cl
 
 ## Features
 
-- Video + audio, video only, or audio only (MP3, M4A, WAV)
-- Choose the quality, and sharper AV1/VP9 or more compatible H.264
-- Download just part of a video
+- Video + audio, video only, or audio only (MP3, M4A, WAV, original)
+- Best compatible (H.264), best quality, a set height, or any individual format
+- Output presets: Original, H.264 MP4, ProRes 422 / 422 HQ, WAV, still frame
+- Clip a range by seconds, `MM:SS`, `HH:MM:SS.mmm` or frame timecode, with an accurate-cut option
+- Stream capture for pages yt-dlp can't read, such as Frame.io shares (no DRM, no sign-in)
+- Password prompt for protected videos
+- Save and embed thumbnails
+- History with re-download, and a clipboard watch that offers copied links
 - Drag a link onto the window to load it
 - On Windows, download progress shows on the taskbar button
 
-Playlists, channels and Vimeo aren't supported.
+Playlists, channels, DRM-protected video and anything that needs a sign-in aren't supported.
 
 ## Building from source
 

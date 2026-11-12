@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
     copyLink: (id) => ipcRenderer.invoke('history-copy-link', id),
     clear: () => ipcRenderer.invoke('history-clear'),
   },
+  onClipboardOffer: (cb) => ipcRenderer.on('clipboard-offer', (event, data) => cb(data)),
   openFolder: () => ipcRenderer.invoke('open-folder'),
 
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),

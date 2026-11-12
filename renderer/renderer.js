@@ -90,6 +90,7 @@ const state = {
   passwordJob: null,
   screen: 'main',
   pendingRedownload: null,
+  autoStart: false,
   downloading: false,
   cancelling: false,
   lastFile: null,
@@ -223,6 +224,7 @@ function openSettings() {
   set.value = state.settings.defaultPreset || 'original';
   $('set-keep').checked = !!state.settings.keepOriginal;
   $('set-sniff').checked = state.settings.sniffFallback !== false;
+  $('set-clipboard').value = state.settings.clipboardWatch || 'on-focus';
   $('set-thumb-save').checked = !!state.settings.saveThumbnail;
   $('set-thumb-embed').checked = state.settings.embedThumbnail !== false;
   showScreen('settings');
@@ -232,11 +234,42 @@ $('settings-btn').addEventListener('click', () => (state.screen === 'settings' ?
 $('settings-done').addEventListener('click', () => showScreen('main'));
 $('set-preset').addEventListener('change', (e) => saveSetting('defaultPreset', e.target.value));
 $('set-sniff').addEventListener('change', (e) => saveSetting('sniffFallback', e.target.checked));
+$('set-clipboard').addEventListener('change', (e) => saveSetting('clipboardWatch', e.target.value));
 $('set-keep').addEventListener('change', (e) => saveSetting('keepOriginal', e.target.checked));
 $('set-thumb-save').addEventListener('change', (e) => saveSetting('saveThumbnail', e.target.checked));
 $('set-thumb-embed').addEventListener('change', (e) => saveSetting('embedThumbnail', e.target.checked));
 $('clear-history-btn').addEventListener('click', async () => {
   if (await window.api.history.clear()) renderHistory();
+});
+
+/* ---------- clipboard banner ---------- */
+
+const clipBanner = $('clip-banner');
+let offeredLink = null;
+
+window.api.onClipboardOffer(({ url, host }) => {
+  if (state.downloading) return;
+  offeredLink = url;
+  $('clip-banner-host').textContent = host;
+  clipBanner.title = '';
+  show(clipBanner, true);
+});
+
+$('clip-banner-dismiss').addEventListener('click', () => {
+  offeredLink = null;
+  show(clipBanner, false);
+});
+
+// Download: a job with the default preset and quality, started as soon as the link has loaded.
+$('clip-banner-go').addEventListener('click', () => {
+  const url = offeredLink;
+  offeredLink = null;
+  show(clipBanner, false);
+  if (!url || state.downloading) return;
+  showScreen('main');
+  state.autoStart = true;
+  urlInput.value = url;
+  urlForm.requestSubmit();
 });
 
 /* ---------- history ---------- */
@@ -503,6 +536,7 @@ async function settleFetch(pending, url) {
 
   if (!result.success) {
     state.pendingRedownload = null;
+    state.autoStart = false;
     resetPreview();
     renderError(previewError, result.error, { retry: () => urlForm.requestSubmit() });
     return;
@@ -520,6 +554,12 @@ async function settleFetch(pending, url) {
   renderOptions();
   refreshEstimate();
   if (state.pendingRedownload) applyRedownload(state.pendingRedownload);
+  if (state.autoStart) {
+    state.autoStart = false;
+    // Default quality and preset, no clip: exactly what the options already show.
+    if (!downloadBtn.disabled) downloadBtn.click();
+    return;
+  }
   downloadBtn.focus();
 }
 

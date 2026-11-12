@@ -9,6 +9,7 @@ const { startJob } = require('./pipeline');
 const presets = require('./presets');
 const thumbs = require('./thumbs');
 const history = require('./history');
+const { createWatcher } = require('./clipboard-watch');
 const { summarizeFormats, summarizeVariants } = require('./formats');
 const { sniff } = require('./sniff');
 const { startSniffSource, safeName } = require('./sniff/source');
@@ -19,6 +20,14 @@ const WINDOW_WIDTH = 600;
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 
 const jobs = new JobStore();
+
+// Offers links copied to the clipboard. A busy job isn't interrupted, and the same link is only
+// offered once in half an hour.
+const clipboardWatch = createWatcher({
+  getMode: () => settings.getSettings().clipboardWatch,
+  isQueued: (link) => jobs.isBusy() || (!!jobs.current && jobs.current.sourceUrl === link),
+  onOffer: (link) => send('clipboard-offer', { url: link, host: new URL(link).hostname.replace(/^www\./, '') }),
+});
 
 let mainWindow;
 let activeDownload = null;
@@ -50,7 +59,11 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.on('focus', () => mainWindow.flashFrame(false));
+  mainWindow.on('focus', () => {
+    mainWindow.flashFrame(false);
+    clipboardWatch.onFocus();
+  });
+  clipboardWatch.apply();
 
   // The window only ever shows the app's own page. Without this, dropping a link onto it would
   // load that website in place of the app (the page handles dropped links itself instead).
@@ -109,7 +122,10 @@ app.whenReady().then(() => {
 });
 
 // A single-window utility: closing the window quits, so a download is never left running unseen.
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  clipboardWatch.stop();
+  app.quit();
+});
 
 // ffmpeg's encoder list is read once at startup; presets this machine can't make are hidden.
 let encoders = { h264: null, prores: null };
@@ -413,7 +429,10 @@ ipcMain.handle('discard-job', (event, id) => {
 });
 
 ipcMain.handle('get-settings', () => settings.getSettings());
-ipcMain.handle('save-settings', (event, partial) => settings.saveSettings(partial));
+ipcMain.handle('save-settings', (event, partial) => {
+  settings.saveSettings(partial);
+  clipboardWatch.apply();
+});
 
 ipcMain.handle('choose-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
