@@ -11,6 +11,7 @@ const thumbs = require('./thumbs');
 const history = require('./history');
 const { createWatcher } = require('./clipboard-watch');
 const { summarizeFormats, summarizeVariants } = require('./formats');
+const { pickSubtitle } = require('./subtitles');
 const { sniff } = require('./sniff');
 const { startSniffSource, safeName } = require('./sniff/source');
 const { JobStore } = require('./jobs');
@@ -128,7 +129,7 @@ app.on('window-all-closed', () => {
 });
 
 // ffmpeg's encoder list is read once at startup; presets this machine can't make are hidden.
-let encoders = { h264: null, prores: null };
+let encoders = { h264: null };
 async function loadEncoders() {
   try {
     encoders = presets.chooseEncoders(await presets.detectEncoders(binaries.getPaths().ffmpegPath));
@@ -162,7 +163,7 @@ function isWebUrl(url) {
 
 ipcMain.handle('get-presets', async () => {
   await loadEncodersOnce();
-  return presets.availablePresets(encoders).map((id) => ({ id, label: presets.PRESETS[id].label, large: !!presets.PRESETS[id].large }));
+  return presets.availablePresets(encoders).map((id) => ({ id, label: presets.PRESETS[id].label }));
 });
 
 let encodersReady = null;
@@ -170,19 +171,6 @@ function loadEncodersOnce() {
   if (!encodersReady) encodersReady = loadEncoders();
   return encodersReady;
 }
-
-// How big a ProRes file will get, and whether there's room for it.
-ipcMain.handle('estimate-output', (event, { jobId, preset, height, clipSeconds }) => {
-  const job = jobs.get(jobId);
-  if (!job) return null;
-  const top = (job.formats || [])[0] || {};
-  const h = Number.isInteger(height) ? height : top.height;
-  const w = Number.isInteger(height) ? Math.round((height * 16) / 9) : top.width || Math.round(((top.height || 1080) * 16) / 9);
-  const bytes = presets.estimateBytes(preset, {
-    width: w, height: h || 1080, fps: job.fps || 30, durationSec: clipSeconds || job.durationSec,
-  });
-  return { bytes, freeBytes: freeSpace(settings.getSettings().lastFolder) };
-});
 
 function freeSpace(folder) {
   try {
@@ -270,6 +258,7 @@ async function resolveJob(job) {
       fps: bestFps(formats),
       formats: formats.options,
       thumbnailUrl: info.thumbnail || undefined,
+      subtitles: pickSubtitle(info) || undefined,
       wrongPassword: false,
       task: undefined,
     });
@@ -283,6 +272,7 @@ async function resolveJob(job) {
         fps: bestFps(formats),
         thumbnail: info.thumbnail || null,
         site: info.extractor_key || null,
+        subtitles: pickSubtitle(info),
       },
       formats,
     };
@@ -291,7 +281,10 @@ async function resolveJob(job) {
     const error = toFriendly(job, err);
     if (error.code === 'PASSWORD' || error.code === 'WRONG_PASSWORD') return askForPassword(job, error);
     // yt-dlp can't read the page: let the site's own player show us the stream instead.
-    if (/Unsupported URL|No video formats found/i.test((err && err.raw) || '') && settings.getSettings().sniffFallback) {
+    const raw = (err && err.raw) || '';
+    // Reddit refuses yt-dlp but shows its public video to a normal page load.
+    const redditBlocked = /\[Reddit\].*authentication is required/i.test(raw);
+    if ((/Unsupported URL|No video formats found/i.test(raw) || redditBlocked) && settings.getSettings().sniffFallback) {
       return captureStream(job);
     }
     jobs.fail(job, error);
@@ -484,19 +477,6 @@ function resolveOutput(job, payload) {
   return { preset, audioFormat, clip, accurate: !!(payload.accurate && clip) };
 }
 
-// Blocks ProRes jobs that wouldn't fit on the disk (free space under 1.2x the estimate).
-function checkRoom(job, request, payload) {
-  const estimate = presets.estimateBytes(request.preset, {
-    width: (job.formats && job.formats[0] && job.formats[0].width) || 1920,
-    height: (job.formats && job.formats[0] && job.formats[0].height) || 1080,
-    fps: job.fps || 30,
-    durationSec: request.clip ? (request.clip.end == null ? job.durationSec : request.clip.end) - request.clip.start : job.durationSec,
-  });
-  const free = freeSpace(payload.folder);
-  if (estimate && free != null && free < estimate * 1.2) return errorFromCode('DISK_FULL', `Needs about ${estimate} bytes, ${free} free.`);
-  return null;
-}
-
 // Cover image for conversions and captured streams; also the small copy for the History list.
 async function finishThumbnails(job, file, want, ytdlpHandled) {
   const { ffmpegPath } = binaries.getPaths();
@@ -614,11 +594,6 @@ ipcMain.handle('start-download', async (event, payload) => {
     if (job.status !== 'ready') return { started: false, error: errorFromCode('UNKNOWN', `Job is ${job.status}.`) };
     await loadEncodersOnce();
     const request = resolveOutput(job, payload);
-    const blocked = checkRoom(job, request, payload);
-    if (blocked) {
-      jobs.fail(job, blocked);
-      return { started: false };
-    }
     const thumbWant = {
       save: !!(payload.thumbnail && payload.thumbnail.save),
       embed: !!(payload.thumbnail && payload.thumbnail.embed),
@@ -651,6 +626,8 @@ ipcMain.handle('start-download', async (event, payload) => {
         keepOriginal: settings.getSettings().keepOriginal,
         saveThumbnail: ytdlpThumbs && thumbWant.save,
         embedThumbnail: ytdlpThumbs && thumbWant.embed,
+        // Subtitles come from yt-dlp's own tracks; a clip would cut the video but not them.
+        subtitles: ['embed', 'file'].includes(payload.subtitles) && !request.clip && job.resolver === 'ytdlp' && job.subtitles ? { ...job.subtitles, mode: payload.subtitles } : undefined,
       },
       {
         onProgress: (progress) => {

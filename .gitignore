@@ -4,3 +4,4 @@ dist/
 vendor/
 .impeccable/
 test/links.md
+test/previews/

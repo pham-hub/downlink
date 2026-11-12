@@ -16,7 +16,7 @@ const { startDownload } = require('./downloader');
 const { runFfmpeg } = require('./ffmpeg');
 const presets = require('./presets');
 
-const PRESET_TAGS = { h264: 'H.264', prores422: 'ProRes 422', prores422hq: 'ProRes 422 HQ' };
+const PRESET_TAGS = { h264: 'H.264' };
 
 function uniquePath(dir, base, ext) {
   let candidate = path.join(dir, `${base}.${ext}`);
@@ -116,6 +116,22 @@ function startJob(options, hooks) {
       ];
     }
 
+    // A subtitle file yt-dlp wrote next to the source follows the final file.
+    const keepSubtitles = (finalFile) => {
+      const sourceBase = path.basename(sourceFile, path.extname(sourceFile));
+      const finalBase = path.basename(finalFile, path.extname(finalFile));
+      fs.readdirSync(sourceDir)
+        .filter((name) => name.startsWith(`${sourceBase}.`) && /\.srt$/i.test(name))
+        .forEach((name) => {
+          const target = path.join(options.folder, `${finalBase}${name.slice(sourceBase.length)}`);
+          try {
+            fs.renameSync(path.join(sourceDir, name), target);
+          } catch {
+            fs.copyFileSync(path.join(sourceDir, name), target);
+          }
+        });
+    };
+
     if (!args) {
       // Nothing to convert: the downloaded file is the result.
       const output = uniquePath(options.folder, base, path.extname(sourceFile).slice(1));
@@ -124,6 +140,7 @@ function startJob(options, hooks) {
       } catch {
         fs.copyFileSync(sourceFile, output); // a different volume
       }
+      keepSubtitles(output);
       return hooks.onComplete({ filePath: output, existing: false });
     }
 
@@ -149,6 +166,7 @@ function startJob(options, hooks) {
       const kept = uniquePath(options.folder, base, path.extname(sourceFile).slice(1));
       fs.copyFileSync(sourceFile, kept);
     }
+    keepSubtitles(output);
     hooks.onComplete({ filePath: output, existing: false });
   }
 

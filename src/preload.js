@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('api', {
   discardJob: (id) => ipcRenderer.invoke('discard-job', id),
   onJobUpdate: (cb) => ipcRenderer.on('job-update', (event, snapshot) => cb(snapshot)),
   getPresets: () => ipcRenderer.invoke('get-presets'),
-  estimateOutput: (args) => ipcRenderer.invoke('estimate-output', args),
   history: {
     list: (query) => ipcRenderer.invoke('history-list', query),
     thumb: (id) => ipcRenderer.invoke('history-thumb', id),

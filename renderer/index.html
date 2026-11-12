@@ -39,23 +39,10 @@
     <section id="settings-screen" class="screen hidden">
       <div class="card settings-card">
         <div class="field">
-          <label for="set-preset">Convert</label>
-          <div class="field-body">
-            <div class="select-wrap"><select id="set-preset"></select></div>
-          </div>
-        </div>
-        <div class="field">
           <label for="set-sniff">Stream capture</label>
           <div class="field-body">
             <label class="switch-row"><input id="set-sniff" type="checkbox" class="switch" /><span>Stream capture fallback</span></label>
             <p class="hint muted">Captures the video stream from pages Downlink doesn't natively support. Doesn't work on DRM-protected content.</p>
-          </div>
-        </div>
-        <div class="field">
-          <label>Thumbnails</label>
-          <div class="field-body">
-            <label class="switch-row"><input id="set-thumb-save" type="checkbox" class="switch" /><span>Save thumbnail</span></label>
-            <label class="switch-row"><input id="set-thumb-embed" type="checkbox" class="switch" /><span>Embed thumbnail</span></label>
           </div>
         </div>
         <div class="field">
@@ -132,22 +119,6 @@
           </button>
         </div>
 
-        <div class="field" id="quality-field">
-          <label for="quality-select">Quality</label>
-          <div class="field-body">
-            <div class="select-wrap">
-              <select id="quality-select"><option value="best-compatible">Best compatible (H.264)</option></select>
-            </div>
-            <div id="advanced-wrap" class="advanced-wrap hidden">
-              <button id="advanced-toggle" type="button" class="btn btn-small btn-ghost" aria-expanded="false">Advanced</button>
-              <div id="advanced-body" class="select-wrap hidden">
-                <select id="format-select" aria-label="Individual format"></select>
-              </div>
-            </div>
-            <p id="quality-hint" class="hint muted hidden">May not play in some editors or media servers.</p>
-          </div>
-        </div>
-
         <div class="field hidden" id="audio-field">
           <label>Format</label>
           <div class="field-body">
@@ -161,20 +132,26 @@
           </div>
         </div>
 
+        <div class="field hidden" id="subs-field">
+          <label for="subs-select">Subtitles</label>
+          <div class="field-body">
+            <div class="select-wrap">
+              <select id="subs-select" aria-label="Subtitles">
+                <option value="">Off</option>
+                <option value="embed">In the video</option>
+                <option value="file">Separate .srt file</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div class="field" id="preset-field">
           <label for="convert-toggle">Convert</label>
           <div class="field-body">
             <label class="switch-row">
               <input id="convert-toggle" type="checkbox" class="switch" />
-              <span>Convert after download</span>
+              <span>Convert to H.264</span>
             </label>
-            <div id="convert-body" class="convert-body hidden">
-              <div class="select-wrap">
-                <select id="preset-select" aria-label="Convert to"></select>
-              </div>
-              <p id="preset-note" class="hint muted"></p>
-              <p id="preset-error" class="hint error-text hidden"></p>
-            </div>
           </div>
         </div>
 
@@ -209,14 +186,6 @@
 
         <p id="plan-summary" class="plan-summary hidden"></p>
 
-        <div class="field" id="thumb-field">
-          <label>Thumbnail</label>
-          <div class="field-body">
-            <label class="switch-row"><input id="thumb-save" type="checkbox" class="switch" /><span>Save thumbnail</span></label>
-            <label class="switch-row"><input id="thumb-embed" type="checkbox" class="switch" /><span>Embed thumbnail</span></label>
-            <p id="thumb-hint" class="hint muted hidden">Embedding not supported for this format</p>
-          </div>
-        </div>
 
         <div class="field">
           <label>Save to</label>

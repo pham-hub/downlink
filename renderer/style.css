@@ -247,8 +247,8 @@ p {
   gap: 8px;
   height: 52px;
   padding: 0 7px 0 14px;
-  background: var(--card-fill) padding-box, var(--card-edge) border-box;
-  border: 1px solid transparent;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   transition: border-color 0.15s;
 }
@@ -290,6 +290,8 @@ p {
   align-items: center;
   gap: 14px;
   padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
 }
 
 .thumb {
@@ -1075,17 +1077,6 @@ html[data-win] .titlebar-btn-history {
 .clip-banner-text strong {
   color: var(--text);
   font-weight: 500;
-}
-
-.convert-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.convert-body .hint {
-  margin: 0;
 }
 
 .plan-summary {

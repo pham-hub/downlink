@@ -1,4 +1,4 @@
-// Output presets (spec section 5): what each one is, which encoder it needs, and the ffmpeg
+// Output presets (spec section 5, minus ProRes, which was dropped): what each one is, which encoder it needs, and the ffmpeg
 // arguments that make it. Presets that don't convert (Original, Audio only original) are done
 // by yt-dlp alone.
 
@@ -8,8 +8,6 @@ const path = require('path');
 const PRESETS = {
   original: { label: 'Original', convert: false },
   h264: { label: 'H.264 MP4 (playback)', convert: true, ext: 'mp4', needs: 'h264' },
-  prores422: { label: 'ProRes 422 (editing)', convert: true, ext: 'mov', needs: 'prores', profile: 2, mbpsAt1080p30: 147, large: true },
-  prores422hq: { label: 'ProRes 422 HQ', convert: true, ext: 'mov', needs: 'prores', profile: 3, mbpsAt1080p30: 147 * 1.5, large: true },
   wav: { label: 'Audio only (WAV)', convert: true, ext: 'wav', audioOnly: true },
   'audio-original': { label: 'Audio only (original)', convert: false, audioOnly: true },
 };
@@ -49,7 +47,6 @@ function chooseEncoders(names) {
   const pick = (...candidates) => candidates.find((c) => names.has(c) && (mac || !/videotoolbox/.test(c))) || null;
   return {
     h264: pick('h264_videotoolbox', 'libx264'),
-    prores: pick('prores_videotoolbox', 'prores_ks'),
   };
 }
 
@@ -105,16 +102,6 @@ function probe(ffmpegPath, file) {
   });
 }
 
-// ---------- sizes ----------
-
-// ProRes is about 147 Mbps at 1080p30 (HQ about 1.5x that); it scales with pixels and frame rate.
-function estimateBytes(presetId, { width = 1920, height = 1080, fps = 30, durationSec }) {
-  const preset = PRESETS[presetId];
-  if (!preset || !preset.mbpsAt1080p30 || !durationSec) return undefined;
-  const mbps = preset.mbpsAt1080p30 * ((width * height) / (1920 * 1080)) * (fps / 30);
-  return Math.round(((mbps * 1e6) / 8) * durationSec);
-}
-
 // ---------- ffmpeg arguments ----------
 
 function evenScale(probeInfo) {
@@ -139,7 +126,6 @@ function matchedBitrate(probeInfo) {
 
 // Arguments for the second step: source file in, preset file out.
 function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output }) {
-  const preset = PRESETS[presetId];
   const base = ['-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats'];
 
   if (presetId === 'wav') {
@@ -157,23 +143,13 @@ function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output })
       '-pix_fmt', 'yuv420p',
       ...evenScale(probeInfo),
       ...colorTags(probeInfo),
+      '-map', '0:s?', '-c:s', 'mov_text',
       '-c:a', 'aac', '-b:a', '320k',
       '-movflags', '+faststart',
       output,
     ];
   }
-  // ProRes 422 / 422 HQ
-  const profile = encoders.prores === 'prores_videotoolbox' ? ['-profile:v', preset.profile === 3 ? 'hq' : 'standard'] : ['-profile:v', String(preset.profile)];
-  return [
-    ...base, '-i', input,
-    '-map', '0:v:0', '-map', '0:a:0?',
-    '-c:v', encoders.prores, ...profile,
-    '-pix_fmt', 'yuv422p10le',
-    ...evenScale(probeInfo),
-    ...colorTags(probeInfo),
-    '-c:a', 'pcm_s24le', '-ar', '48000',
-    output,
-  ];
+  throw new Error(`No converter for ${presetId}`);
 }
 
 // Audio from a sniffed file: MP3 is encoded, M4A and "original" keep the AAC as it is.
@@ -191,6 +167,5 @@ module.exports = {
   chooseEncoders,
   availablePresets,
   probe,
-  estimateBytes,
   buildConvertArgs,
 };

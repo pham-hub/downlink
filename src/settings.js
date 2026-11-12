@@ -5,16 +5,12 @@ const os = require('os');
 
 const DEFAULTS = {
   mode: 'both',
-  quality: 'best', // v1.0; replaced by defaultQuality
+  quality: 'best',
   audioFormat: 'mp3',
   videoCodec: 'best',
   // v1.1
   sniffFallback: true,
-  defaultPreset: 'original',
-  defaultQuality: 'best-quality',
   clipboardWatch: 'on-focus', // 'off' | 'on-focus' | 'background'
-  saveThumbnail: false,
-  embedThumbnail: true,
   keepOriginal: false,
   historyLimit: 1000,
 };
@@ -52,8 +48,8 @@ function getSettings() {
 function saveSettings(partial) {
   const allowed = [
     'mode', 'quality', 'audioFormat', 'videoCodec', 'lastFolder',
-    'sniffFallback', 'defaultPreset', 'defaultQuality', 'clipboardWatch',
-    'saveThumbnail', 'embedThumbnail', 'keepOriginal', 'historyLimit',
+    'sniffFallback', 'clipboardWatch',
+    'keepOriginal', 'historyLimit',
   ];
   const settings = readSettings();
   allowed.forEach((key) => {
@@ -61,7 +57,7 @@ function saveSettings(partial) {
     const value = partial[key];
     if (key === 'clipboardWatch' && !CLIPBOARD_MODES.includes(value)) return;
     if (key === 'historyLimit' && !(Number.isInteger(value) && value >= 0)) return;
-    if (['sniffFallback', 'saveThumbnail', 'embedThumbnail', 'keepOriginal'].includes(key) && typeof value !== 'boolean') return;
+    if (['sniffFallback', 'keepOriginal'].includes(key) && typeof value !== 'boolean') return;
     settings[key] = value;
   });
   writeSettings(settings);

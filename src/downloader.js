@@ -102,7 +102,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle, password, embedThumbnail, saveThumbnail }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle, password, embedThumbnail, saveThumbnail, subtitles }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -154,6 +154,12 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode,
       '--merge-output-format', 'mp4'
     );
     if (embedThumbnail) args.push('--embed-thumbnail');
+  }
+
+  // Subtitles, for videos only: inside the file, or as a .srt next to it.
+  if (subtitles && subtitles.lang && mode !== 'audio') {
+    if (subtitles.mode === 'file') args.push('--write-subs', '--write-auto-subs', '--sub-langs', subtitles.lang, '--convert-subs', 'srt');
+    else args.push('--write-auto-subs', '--sub-langs', subtitles.lang, '--embed-subs');
   }
 
   // The saved copy lands next to the video as <name>.jpg.

@@ -13,7 +13,7 @@ The apps aren't code-signed, so the first launch shows a warning. On Windows, cl
 
 - Video + audio, video only, or audio only (MP3, M4A, WAV, original)
 - Best compatible (H.264), best quality, a set height, or any individual format
-- Output presets: Original, H.264 MP4, ProRes 422 / 422 HQ, WAV, still frame
+- Convert to H.264 (offered only when the best video isn't H.264); WAV for audio
 - Clip a range by seconds, `MM:SS`, `HH:MM:SS.mmm` or frame timecode, with an accurate-cut option
 - Stream capture for pages yt-dlp can't read, such as Frame.io shares (no DRM, no sign-in)
 - Password prompt for protected videos

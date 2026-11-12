@@ -78,8 +78,8 @@ class JobStore extends EventEmitter {
       sourceUrl,
       resolver: 'ytdlp',
       status: 'queued',
-      preset: defaults.defaultPreset || 'original',
-      thumbnail: { save: !!defaults.saveThumbnail, embed: defaults.embedThumbnail !== false },
+      preset: 'original',
+      thumbnail: { save: false, embed: true },
       createdAt: Date.now(),
     };
     this.current = job;
