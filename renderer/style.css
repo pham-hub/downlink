@@ -784,6 +784,36 @@ select:focus-visible {
   border: 1px solid rgba(242, 84, 91, 0.3);
 }
 
+.notice-message {
+  line-height: 1.45;
+}
+
+.notice-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.notice .details {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.notice .details pre {
+  margin: 0 0 6px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .notice.info {
   color: var(--muted);
   background: var(--surface);

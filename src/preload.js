@@ -10,10 +10,9 @@ contextBridge.exposeInMainWorld('api', {
 
   startDownload: (payload) => ipcRenderer.invoke('start-download', payload),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
-  onDownloadProgress: (cb) => ipcRenderer.on('download-progress', (event, data) => cb(data)),
-  onDownloadComplete: (cb) => ipcRenderer.on('download-complete', (event, data) => cb(data)),
-  onDownloadError: (cb) => ipcRenderer.on('download-error', (event, data) => cb(data)),
-  onDownloadCancelled: (cb) => ipcRenderer.on('download-cancelled', () => cb()),
+  discardJob: (id) => ipcRenderer.invoke('discard-job', id),
+  onJobUpdate: (cb) => ipcRenderer.on('job-update', (event, snapshot) => cb(snapshot)),
+  openFolder: () => ipcRenderer.invoke('open-folder'),
 
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),

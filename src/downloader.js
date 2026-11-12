@@ -6,6 +6,8 @@ const path = require('path');
 // from changing what the app downloads or where it saves.
 const BASE_ARGS = ['--ignore-config', '--no-playlist', '--no-warnings'];
 const FILE_MARKER = '__VD_FILE__ ';
+const PROGRESS_TEMPLATE =
+  'download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s';
 
 const AUDIO_FORMATS = {
   mp3: { selector: 'ba/b', extra: ['--audio-quality', '0'], coverArt: true },
@@ -36,77 +38,49 @@ function runtimeArgs(denoPath) {
 
 const FETCH_TIMEOUT = 90 * 1000;
 
-// Reads a link's title, duration and formats without downloading anything.
+// An error carrying the raw tool output (for the error map) or a code of the app's own.
+function toolError(raw, code) {
+  const err = new Error(String(raw || '').trim().split('\n').pop() || 'yt-dlp failed');
+  err.raw = String(raw || '');
+  if (code) err.code = code;
+  return err;
+}
+
+// Reads a link's title, duration and formats without downloading anything (`yt-dlp -J`).
 // --flat-playlist makes playlist and channel links return a short list right away instead of
 // looking up every video in them, so they can be turned away quickly.
+// The promise has a cancel() so a link the user moved on from stops loading.
 function fetchInfo({ ytDlpPath, denoPath }, url) {
-  return new Promise((resolve, reject) => {
-    execFile(
+  let child;
+  const promise = new Promise((resolve, reject) => {
+    child = execFile(
       ytDlpPath,
       [...BASE_ARGS, ...runtimeArgs(denoPath), '--dump-single-json', '--flat-playlist', '--', url],
       { maxBuffer: 1024 * 1024 * 50, timeout: FETCH_TIMEOUT, windowsHide: true },
       (err, stdout, stderr) => {
         if (err && err.killed) {
-          reject(new Error('This link took too long to load. Check it and your connection, then try again.'));
+          reject(toolError('', 'RESOLVE_TIMEOUT'));
           return;
         }
         if (err) {
-          reject(new Error(mapErrorMessage(stderr || err.message)));
+          reject(toolError(stderr || err.message));
           return;
         }
         let info;
         try {
           info = JSON.parse(stdout);
         } catch {
-          reject(new Error('Could not read video information for this URL.'));
+          reject(toolError(stderr, 'NO_VIDEO'));
           return;
         }
-        if (info._type === 'playlist') {
-          reject(new Error("That's a playlist or channel link. Open a single video and paste its link."));
-        } else if (info.is_live) {
-          reject(new Error("This is a live stream. It can be downloaded once it's over."));
-        } else {
-          resolve(info);
-        }
+        if (info._type === 'playlist') reject(toolError('', 'PLAYLIST'));
+        else if (info.is_live) reject(toolError('', 'LIVE'));
+        else resolve(info);
       }
     );
   });
-}
-
-// Turns yt-dlp's error output into one plain sentence. Checked in order; the first match wins.
-const ERROR_MESSAGES = [
-  [/Unsupported URL/i, "This site or link isn't supported."],
-  [/is not a valid URL|Incomplete YouTube ID/i, "That doesn't look like a valid video link."],
-  [/No space left on device|ENOSPC/i, 'Not enough disk space to complete this download.'],
-  [/Permission denied|Operation not permitted|EACCES|EPERM|Read-only file system/i, "Can't save to that folder. Choose a different one."],
-  [/not a bot/i, "YouTube wants to confirm you're not a bot. Wait a few minutes and try again."],
-  [/Private video|Sign in to confirm your age|This video is unavailable|Video unavailable/i, 'This video is private, age-restricted, or unavailable.'],
-  [/logged-in|--cookies|\blogin required\b|\blog in\b|\bsign in\b/i, 'This site only allows downloads when signed in, which the app doesn\'t support.'],
-  [/Premieres in|live event will begin|This live event/i, "This video hasn't started yet."],
-  [/live stream recording is not available|is currently live|stream is live/i, "This is a live stream. It can be downloaded once it's over."],
-  [/geo.?restrict|not available in your (country|region)|from your location/i, "This video was removed or isn't available in your country."],
-  [/Requested format is not available/i, "That quality isn't available for this video. Try Best available."],
-  [/HTTP Error 429/i, 'The site is limiting requests. Wait a few minutes and try again.'],
-  [/HTTP Error 403/i, 'The site refused the download (HTTP 403). Try again in a few minutes.'],
-  [/HTTP Error 404|: Not found/i, "That video wasn't found. Check the link."],
-  [/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|nodename nor servname|Failed to resolve|Unable to connect|Connection refused|Network is unreachable|timed out|Temporary failure in name resolution/i,
-    "Couldn't reach the site. Check the link and your internet connection."],
-];
-
-function mapErrorMessage(raw) {
-  const text = String(raw || '');
-  const known = ERROR_MESSAGES.find(([pattern]) => pattern.test(text));
-  if (known) return known[1];
-  // Otherwise show yt-dlp's own last error, minus its "ERROR: [site] id:" prefix.
-  const lines = text.trim().split('\n').filter(Boolean);
-  const errorLine = lines.filter((l) => l.startsWith('ERROR:')).pop();
-  const last = errorLine || lines[lines.length - 1] || 'yt-dlp failed to process this URL.';
-  // ...and minus advice meant for command-line users ("You might want to try ... --proxy").
-  return last
-    .replace(/^ERROR:\s*/, '')
-    .replace(/^\[[^\]]+\]\s*[^:\s]+:\s*/, '')
-    .replace(/\s*(You might want to|Use --|Try --|See https?:|please report|Confirm you are on the latest).*$/i, '')
-    .replace(/[\s;,:]+$/, '');
+  promise.cancel = () => child && child.kill();
+  return promise;
 }
 
 // 80 -> "1m20s", 3725 -> "1h02m05s"; used in clip file names (colons aren't Finder-friendly).
@@ -120,7 +94,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, mode, resolution, qualityLabel, audioFormat, videoCodec, clip }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolution, qualityLabel, audioFormat, videoCodec, clip }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -130,7 +104,12 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, mode, resolution, qualit
     // The folder, so yt-dlp also finds the ffprobe next to ffmpeg.
     '--ffmpeg-location', path.dirname(ffmpegPath),
     '--embed-metadata',
+    // Progress as one machine-readable line: percent|speed|eta|size|estimated size.
+    '--progress-template', PROGRESS_TEMPLATE,
+    // Partial and intermediate files live in the job's temp folder; only the finished file
+    // is moved into the chosen folder.
     '-P', folder,
+    ...(tempDir ? ['-P', `temp:${tempDir}`] : []),
   ];
   const sort = (VIDEO_SORT[videoCodec] || VIDEO_SORT.best)(resolution ? `res:${resolution}` : 'res');
   // Non-default choices go in the file name, so e.g. a 720p H.264 copy doesn't collide with
@@ -263,14 +242,19 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
     if (mergeMatch) {
       touched.add(mergeMatch[1].replace(/(\.\w+)$/, '.temp$1'));
     }
-    const progressMatch = line.match(/^\[download\]\s+([\d.]+)%(?:\s+of\s+~?\s*([\d.]+\w+))?(?:\s+at\s+([\d.]+\w+\/s|Unknown speed))?(?:\s+ETA\s+([\d:]+|Unknown))?/);
+    const progressMatch = line.match(/^\s*([\d.]+)%\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)$/);
     if (progressMatch && !clip) {
+      const known = (text) => {
+        const t = text.trim();
+        return t && !/^(N\/A|Unknown)/i.test(t) ? t : null;
+      };
+      const size = known(progressMatch[4]) || (known(progressMatch[5]) ? `~${known(progressMatch[5])}` : null);
       onProgress({
         stage: 'downloading',
         percent: parseFloat(progressMatch[1]),
-        size: progressMatch[2] || null,
-        speed: progressMatch[3] && !/Unknown/.test(progressMatch[3]) ? progressMatch[3] : null,
-        eta: progressMatch[4] && !/Unknown/.test(progressMatch[4]) ? progressMatch[4] : null,
+        size,
+        speed: known(progressMatch[2]),
+        eta: known(progressMatch[3]),
         stream: streamIndex || 1,
         streams,
       });
@@ -306,7 +290,7 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
   child.on('error', (err) => {
     if (finished) return;
     finished = true;
-    onError(mapErrorMessage(err.message));
+    onError(err.message);
   });
 
   child.on('close', (code) => {
@@ -321,7 +305,7 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
     } else {
       // Don't leave half-downloaded pieces or stray thumbnails behind after a failure.
       removeLeftovers(touched, startedAt);
-      onError(mapErrorMessage(stderrBuffer));
+      onError(stderrBuffer);
     }
   });
 
@@ -334,7 +318,7 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
         return;
       }
       try {
-        process.kill(-child.pid, 'SIGINT');
+        process.kill(-child.pid, 'SIGTERM');
       } catch {
         // already exited
       }
@@ -351,4 +335,4 @@ function startDownload(options, { onProgress, onComplete, onError, onCancel }) {
   };
 }
 
-module.exports = { fetchInfo, startDownload, mapErrorMessage, buildArgs };
+module.exports = { fetchInfo, startDownload, buildArgs };

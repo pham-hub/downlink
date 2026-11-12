@@ -6,9 +6,13 @@ const binaries = require('./binaries');
 const settings = require('./settings');
 const { fetchInfo, startDownload } = require('./downloader');
 const { summarizeFormats } = require('./formats');
+const { JobStore } = require('./jobs');
+const { friendlyError, errorFromCode } = require('./errors/map');
 
 const WINDOW_WIDTH = 600;
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+
+const jobs = new JobStore();
 
 let mainWindow;
 let activeDownload = null;
@@ -91,6 +95,7 @@ app.whenReady().then(() => {
   const devIcon = path.join(__dirname, '..', 'build', 'icon.png');
   if (app.dock && !app.isPackaged && fs.existsSync(devIcon)) app.dock.setIcon(devIcon);
   binaries.removeStaleCopies();
+  jobs.sweepTemp();
   createWindow();
   setTimeout(updateTools, 5000);
   setInterval(updateTools, UPDATE_CHECK_INTERVAL);
@@ -139,17 +144,42 @@ function validClip(clip) {
   return { start, end };
 }
 
+// The window follows a job through snapshots; it never sees passwords or process handles.
+jobs.on('update', (snapshot) => send('job-update', snapshot));
+
+function errorContext(job, source = 'ytdlp') {
+  return { resolver: job.resolver, source, sniffEnabled: settings.getSettings().sniffFallback };
+}
+
+// Turns whatever a tool run threw into a FriendlyError.
+function toFriendly(job, err, source) {
+  if (err && err.code && !err.raw) return errorFromCode(err.code, err.message);
+  if (err && err.code) return errorFromCode(err.code, err.raw);
+  return friendlyError((err && (err.raw || err.message)) || '', errorContext(job, source));
+}
+
 ipcMain.handle('fetch-info', async (event, url) => {
+  if (!isWebUrl(url)) return { success: false, error: errorFromCode('INVALID_URL') };
+  if (isVimeo(url)) return { success: false, error: errorFromCode('VIMEO') };
+
+  let job;
   try {
-    if (!isWebUrl(url)) {
-      return { success: false, error: 'Please enter a valid video URL.' };
-    }
-    if (isVimeo(url)) {
-      return { success: false, error: "Vimeo isn't supported because it requires signing in." };
-    }
-    const info = await fetchInfo(binaries.getPaths(), url.trim());
+    job = jobs.create(url.trim(), settings.getSettings());
+  } catch (err) {
+    return { success: false, error: errorFromCode('UNKNOWN', err.message) };
+  }
+  jobs.transition(job, 'resolving');
+  try {
+    const task = fetchInfo(binaries.getPaths(), job.sourceUrl);
+    job.task = task;
+    const info = await task;
+    // The user moved on to another link while this one loaded.
+    if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    const formats = summarizeFormats(info);
+    jobs.transition(job, 'ready', { title: info.title, durationSec: info.duration || undefined, task: undefined });
     return {
       success: true,
+      jobId: job.id,
       info: {
         title: info.title,
         uploader: info.uploader || info.channel || info.creator || null,
@@ -157,11 +187,20 @@ ipcMain.handle('fetch-info', async (event, url) => {
         thumbnail: info.thumbnail || null,
         site: info.extractor_key || null,
       },
-      formats: summarizeFormats(info),
+      formats,
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    const error = toFriendly(job, err);
+    jobs.fail(job, error);
+    return { success: false, jobId: job.id, error };
   }
+});
+
+// The link was edited or cleared: whatever was loaded for it no longer applies.
+ipcMain.handle('discard-job', (event, id) => {
+  const job = jobs.get(id);
+  if (job && !jobs.isBusy()) jobs.discard();
 });
 
 ipcMain.handle('get-settings', () => settings.getSettings());
@@ -206,60 +245,75 @@ function notifyComplete(filePath) {
 }
 
 ipcMain.handle('start-download', async (event, payload) => {
-  if (activeDownload) return { started: false, error: 'A download is already running.' };
-  if (!isWebUrl(payload.url)) return { started: false, error: 'Please enter a valid video URL.' };
+  if (activeDownload) return { started: false, error: errorFromCode('UNKNOWN', 'A download is already running.') };
+  const job = jobs.get(payload && payload.jobId);
+  if (!job || !job.title) return { started: false, error: errorFromCode('UNKNOWN', 'Load a link first.') };
   if (typeof payload.folder !== 'string' || !path.isAbsolute(payload.folder)) {
-    return { started: false, error: 'Choose a folder to save into.' };
+    return { started: false, error: errorFromCode('PERMISSION', 'No folder chosen.') };
   }
   try {
+    // A failed download is retried from the same job; its options are still in place.
+    if (job.status === 'failed') jobs.transition(job, 'ready', { error: undefined });
+    if (job.status !== 'ready') return { started: false, error: errorFromCode('UNKNOWN', `Job is ${job.status}.`) };
+    jobs.transition(job, 'downloading', { error: undefined, cancelled: false, progress: { percent: 0 } });
     activeDownload = startDownload(
       {
         ...binaries.getPaths(),
-        url: payload.url.trim(),
+        url: job.sourceUrl,
         folder: payload.folder,
+        tempDir: jobs.tempDir(job),
         mode: payload.mode,
         resolution: Number.isInteger(payload.resolution) ? payload.resolution : null,
         qualityLabel: payload.qualityLabel,
         audioFormat: payload.audioFormat,
         videoCodec: payload.videoCodec,
         clip: validClip(payload.clip),
-        duration: payload.duration,
+        duration: job.durationSec,
       },
       {
         onProgress: (progress) => {
           setTaskbarProgress(progress);
-          send('download-progress', progress);
+          if (progress.stage === 'processing') {
+            if (job.status === 'downloading') jobs.transition(job, 'processing', { progress });
+            else jobs.update(job, { progress });
+          } else if (job.status === 'downloading') {
+            jobs.update(job, { progress });
+          }
         },
         onComplete: (result) => {
           activeDownload = null;
           clearTaskbar(true);
           if (result.filePath) savedFiles.add(result.filePath);
-          send('download-complete', result);
+          jobs.transition(job, 'done', { outputPath: result.filePath || undefined, existing: !!result.existing });
           notifyComplete(result.filePath);
         },
-        onError: (message) => {
+        onError: (raw) => {
           activeDownload = null;
           clearTaskbar(false);
-          send('download-error', { message });
+          jobs.fail(job, toFriendly(job, { raw }));
         },
         onCancel: () => {
           activeDownload = null;
           clearTaskbar(false);
           if (quitWhenCancelled) app.quit();
-          else send('download-cancelled');
+          else jobs.transition(job, 'ready', { cancelled: true });
         },
       }
     );
     return { started: true };
   } catch (err) {
     activeDownload = null;
-    return { started: false, error: err.message };
+    jobs.fail(job, toFriendly(job, err));
+    return { started: false };
   }
 });
 
 ipcMain.handle('cancel-download', () => {
   if (activeDownload) activeDownload.cancel();
 });
+
+// "Show in Finder" on an error: opens the folder the download was going to.
+ipcMain.handle('open-folder', () => shell.openPath(settings.getSettings().lastFolder));
 
 ipcMain.handle('show-in-folder', (event, filePath) => {
   if (savedFiles.has(filePath)) shell.showItemInFolder(filePath);

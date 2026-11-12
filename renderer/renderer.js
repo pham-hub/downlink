@@ -72,6 +72,7 @@ const state = {
   info: null,
   formats: null,
   fetchedUrl: null,
+  jobId: null,
   downloading: false,
   cancelling: false,
   lastFile: null,
@@ -121,7 +122,74 @@ function setStatus(message, type = 'error') {
 }
 
 function clearStatus() {
+  statusEl.textContent = '';
   show(statusEl, false);
+}
+
+// A failed job: one plain sentence, an optional action, and the raw output behind Details.
+function renderError(container, error, { retry } = {}) {
+  container.textContent = '';
+  container.className = 'notice error';
+  const message = document.createElement('div');
+  message.className = 'notice-message';
+  message.textContent = error.message;
+  container.appendChild(message);
+
+  const row = document.createElement('div');
+  row.className = 'notice-actions';
+  if (error.action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-small btn-secondary';
+    btn.textContent = error.action.label;
+    btn.addEventListener('click', () => runErrorAction(error.action.id, retry));
+    row.appendChild(btn);
+  }
+  if (error.details) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn btn-small btn-ghost';
+    toggle.textContent = 'Details';
+    toggle.setAttribute('aria-expanded', 'false');
+    const panel = document.createElement('div');
+    panel.className = 'details hidden';
+    const pre = document.createElement('pre');
+    pre.textContent = error.details;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn btn-small btn-ghost';
+    copy.textContent = 'Copy';
+    copy.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(error.details);
+      copy.textContent = 'Copied';
+      setTimeout(() => (copy.textContent = 'Copy'), 1500);
+    });
+    panel.append(pre, copy);
+    toggle.addEventListener('click', () => {
+      const open = panel.classList.contains('hidden');
+      show(panel, open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    row.appendChild(toggle);
+    container.append(row, panel);
+  } else if (row.children.length) {
+    container.appendChild(row);
+  }
+  show(container, true);
+}
+
+async function runErrorAction(id, retry) {
+  if (id === 'show-folder') {
+    window.api.openFolder();
+  } else if (id === 'enable-sniff') {
+    saveSetting('sniffFallback', true);
+    if (retry) retry();
+  } else if (id === 'retry-original') {
+    saveSetting('defaultPreset', 'original');
+    if (retry) retry();
+  } else if (retry) {
+    retry();
+  }
 }
 
 function saveSetting(key, value) {
@@ -166,6 +234,8 @@ window.api.onToolsUpdated(renderToolVersions);
 /* ---------- fetching ---------- */
 
 function resetPreview() {
+  if (state.jobId && !state.downloading) window.api.discardJob(state.jobId);
+  state.jobId = null;
   state.info = null;
   state.formats = null;
   state.fetchedUrl = null;
@@ -217,6 +287,8 @@ urlForm.addEventListener('submit', async (event) => {
   show(fetchBtn.querySelector('.label'), false);
 
   const result = await window.api.fetchInfo(url);
+  // A newer link replaced this one while it loaded.
+  if (result.stale) return;
 
   fetchBtn.disabled = false;
   show(fetchBtn.querySelector('.spinner'), false);
@@ -230,11 +302,11 @@ urlForm.addEventListener('submit', async (event) => {
 
   if (!result.success) {
     resetPreview();
-    previewError.textContent = result.error;
-    show(previewError, true);
+    renderError(previewError, result.error, { retry: () => urlForm.requestSubmit() });
     return;
   }
 
+  state.jobId = result.jobId;
   state.info = result.info;
   state.formats = result.formats;
   state.fetchedUrl = url;
@@ -494,7 +566,7 @@ downloadBtn.addEventListener('click', async () => {
   setProgress({ indeterminate: true, stage: 'Starting…' });
 
   const result = await window.api.startDownload({
-    url: state.fetchedUrl,
+    jobId: state.jobId,
     folder: state.settings.lastFolder,
     mode,
     resolution: mode === 'audio' ? null : quality?.res ?? null,
@@ -508,7 +580,7 @@ downloadBtn.addEventListener('click', async () => {
 
   if (!result.started) {
     setDownloading(false);
-    setStatus(result.error || 'Could not start the download.');
+    if (result.error) renderError(statusEl, result.error, { retry: () => downloadBtn.click() });
   }
 });
 
@@ -520,8 +592,8 @@ cancelBtn.addEventListener('click', () => {
   window.api.cancelDownload();
 });
 
-window.api.onDownloadProgress((p) => {
-  if (state.cancelling) return;
+function showProgress(p) {
+  if (!p) return;
   if (p.stage === 'processing') {
     setProgress({ indeterminate: true, stage: STEP_LABELS[p.step] || 'Finishing up…' });
     return;
@@ -534,27 +606,32 @@ window.api.onDownloadProgress((p) => {
 
   const detail = [p.size, p.speed, p.eta ? `${p.eta} left` : null].filter(Boolean).join(' · ');
   setProgress({ percent: p.percent, stage, detail });
-});
+}
 
-window.api.onDownloadComplete(({ filePath, existing }) => {
-  setDownloading(false);
-  state.lastFile = filePath;
-  $('result-title').textContent = existing ? 'Already in this folder' : 'Saved';
-  resultFile.textContent = filePath ? filePath.split('/').pop() : 'Download finished';
-  resultFile.title = filePath || '';
-  $('reveal-btn').disabled = !filePath;
-  $('open-btn').disabled = !filePath;
-  show(resultCard, true);
-});
-
-window.api.onDownloadError(({ message }) => {
-  setDownloading(false);
-  setStatus(message);
-});
-
-window.api.onDownloadCancelled(() => {
-  setDownloading(false);
-  setStatus('Download cancelled. Partial files were removed.', 'info');
+// The main process moves the job through its stages; the window just follows along.
+window.api.onJobUpdate((job) => {
+  if (job.id !== state.jobId) return;
+  if (job.status === 'downloading' || job.status === 'processing') {
+    if (state.cancelling) return;
+    if (!state.downloading) setDownloading(true);
+    showProgress(job.progress);
+  } else if (job.status === 'done') {
+    setDownloading(false);
+    state.lastFile = job.outputPath;
+    $('result-title').textContent = job.existing ? 'Already in this folder' : 'Saved';
+    resultFile.textContent = job.outputPath ? job.outputPath.split(/[\\/]/).pop() : 'Download finished';
+    resultFile.title = job.outputPath || '';
+    $('reveal-btn').disabled = !job.outputPath;
+    $('open-btn').disabled = !job.outputPath;
+    show(resultCard, true);
+  } else if (job.status === 'failed') {
+    if (state.downloading) setDownloading(false);
+    // A failure while loading the link is shown by the fetch itself.
+    if (state.info) renderError(statusEl, job.error, { retry: () => downloadBtn.click() });
+  } else if (job.status === 'ready' && job.cancelled) {
+    setDownloading(false);
+    setStatus('Download cancelled. Partial files were removed.', 'info');
+  }
 });
 
 $('reveal-btn').addEventListener('click', () => window.api.showInFolder(state.lastFile));
