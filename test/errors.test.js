@@ -37,5 +37,5 @@ const clean = redact(cmd);
 assert.ok(!clean.includes('hunter2') && !clean.includes('eyJhbGci'), clean);
 assert.ok(!friendlyError(`${cmd}\nWrong password`, {}).details.includes('hunter2'));
 
-assert.strictEqual(errorFromCode('NO_STREAM_FOUND').action.id, 'retry');
+assert.strictEqual(errorFromCode('NO_STREAM_FOUND').action.id, 'show-page');
 console.log(`errors: ${cases.length} cases ok`);

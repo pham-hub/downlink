@@ -168,7 +168,10 @@ function renderError(container, error, { retry } = {}) {
 }
 
 async function runErrorAction(id, retry) {
-  if (id === 'show-folder') {
+  if (id === 'show-page') {
+    state.showPageNext = true;
+    if (retry) retry();
+  } else if (id === 'show-folder') {
     window.api.openFolder();
   } else if (id === 'enable-sniff') {
     saveSetting('sniffFallback', true);
@@ -464,7 +467,9 @@ urlForm.addEventListener('submit', async (event) => {
   previewSub.textContent = 'Loading';
   setFetching(true);
 
-  await settleFetch(window.api.fetchInfo(url), url);
+  const showPage = state.showPageNext;
+  state.showPageNext = false;
+  await settleFetch(window.api.fetchInfo(url, showPage ? { showPage: true } : undefined), url);
 });
 
 function setFetching(on) {

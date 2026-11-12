@@ -12,6 +12,7 @@ const platformFolderLabel = process.platform === 'win32' ? 'Show in Explorer' : 
 
 const ACTIONS = {
   retry: { id: 'retry', label: 'Retry' },
+  showPage: { id: 'show-page', label: 'Show the page' },
   tryAgain: { id: 'retry-password', label: 'Try again' },
   enableSniff: { id: 'enable-sniff', label: 'Turn on stream capture' },
   showFolder: { id: 'show-folder', label: platformFolderLabel },
@@ -126,7 +127,7 @@ const ERROR_TABLE = [
 
 // Errors the app raises itself rather than reading from stderr.
 const CODED = {
-  NO_STREAM_FOUND: { message: "Couldn't find a video on this page.", action: ACTIONS.retry },
+  NO_STREAM_FOUND: { message: "Couldn't find a video on this page.", action: ACTIONS.showPage },
   DRM: { message: "This video is DRM-protected and can't be downloaded." },
   PLAYLIST: { message: "That's a playlist or channel link. Open a single video and paste its link." },
   LIVE: { message: "This is a live stream. It can be downloaded once it's over." },

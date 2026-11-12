@@ -227,7 +227,7 @@ function toFriendly(job, err, source) {
   return friendlyError((err && (err.raw || err.message)) || '', errorContext(job, source));
 }
 
-ipcMain.handle('fetch-info', async (event, url) => {
+ipcMain.handle('fetch-info', async (event, url, opts) => {
   if (!isWebUrl(url)) return { success: false, error: errorFromCode('INVALID_URL') };
 
   let job;
@@ -237,6 +237,8 @@ ipcMain.handle('fetch-info', async (event, url) => {
     return { success: false, error: errorFromCode('UNKNOWN', err.message) };
   }
   jobs.transition(job, 'resolving');
+  // "Show the page": skip yt-dlp and open the page for the person to get past a captcha or login.
+  if (opts && opts.showPage) return captureStream(job, { visible: true });
   return resolveJob(job);
 });
 
@@ -325,10 +327,10 @@ ipcMain.handle('submit-password', async (event, { jobId, password }) => {
 });
 
 // Stream capture fallback (spec section 1): a hidden window loads the page and notes the stream.
-async function captureStream(job) {
+async function captureStream(job, { visible = false } = {}) {
   jobs.update(job, { resolver: 'sniff' });
   try {
-    const task = sniff(job.sourceUrl, { jobId: job.id });
+    const task = sniff(job.sourceUrl, { jobId: job.id, visible });
     job.task = task;
     const result = await task;
     if (jobs.get(job.id) !== job) return { success: false, stale: true };

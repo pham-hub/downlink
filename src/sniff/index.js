@@ -14,6 +14,7 @@ const { classifyPlaylist, parseMaster, playlistDuration } = require('./hls');
 const USER_AGENT = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 
 const TOTAL_TIMEOUT = 25 * 1000;
+const VISIBLE_TIMEOUT = 5 * 60 * 1000; // the person may be solving a captcha or typing a password
 const PLAY_BUTTON_AFTER = 4 * 1000;
 const SETTLE = 1200; // wait a moment after a good candidate for a better one
 const MAX_SEGMENTS_KEPT = 30;
@@ -52,7 +53,9 @@ function kindFromUrl(url, contentType) {
 }
 
 // Starts a capture. Returns a promise for a SniffResult; promise.cancel() stops it.
-function sniff(pageUrl, { jobId, onStatus } = {}) {
+// visible: show the page so the person can get past a captcha or password form; the capture
+// keeps watching and finishes as soon as a stream plays.
+function sniff(pageUrl, { jobId, onStatus, visible = false } = {}) {
   let cancelFn = () => {};
   const promise = new Promise((resolve, reject) => {
     const ses = session.fromPartition(`downlink-sniff-${jobId}`); // not persistent: no "persist:" prefix
@@ -61,9 +64,11 @@ function sniff(pageUrl, { jobId, onStatus } = {}) {
     ses.on('will-download', (e) => e.preventDefault());
 
     const win = new BrowserWindow({
-      show: false,
-      width: 1280,
+      show: visible,
+      width: visible ? 1100 : 1280,
       height: 720,
+      title: 'Downlink: find the video',
+      autoHideMenuBar: true,
       webPreferences: {
         session: ses,
         sandbox: true,
@@ -74,7 +79,7 @@ function sniff(pageUrl, { jobId, onStatus } = {}) {
         preload: path.join(__dirname, 'preload.js'),
       },
     });
-    win.webContents.setAudioMuted(true);
+    win.webContents.setAudioMuted(!visible);
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
     const requestHeaders = new Map(); // url -> { referer, origin, userAgent }
@@ -274,7 +279,8 @@ function sniff(pageUrl, { jobId, onStatus } = {}) {
 
     const poll = setInterval(attempt, 500);
 
-    timers.push(setTimeout(() => done(drm ? fail('DRM') : fail('NO_STREAM_FOUND')), TOTAL_TIMEOUT));
+    timers.push(setTimeout(() => done(drm ? fail('DRM') : fail('NO_STREAM_FOUND')), visible ? VISIBLE_TIMEOUT : TOTAL_TIMEOUT));
+    if (visible) win.on('closed', () => done(fail('NO_STREAM_FOUND')));
 
     win.webContents.on('did-finish-load', () => {
       if (finished) return;

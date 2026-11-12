@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   getToolVersions: () => ipcRenderer.invoke('get-tool-versions'),
   onToolsUpdated: (cb) => ipcRenderer.on('tools-updated', (event, data) => cb(data)),
-  fetchInfo: (url) => ipcRenderer.invoke('fetch-info', url),
+  fetchInfo: (url, opts) => ipcRenderer.invoke('fetch-info', url, opts),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (partial) => ipcRenderer.invoke('save-settings', partial),
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
