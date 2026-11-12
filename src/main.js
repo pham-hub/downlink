@@ -480,10 +480,8 @@ function resolveOutput(job, payload) {
   let audioFormat = payload.audioFormat;
   if (payload.mode === 'audio') preset = audioFormat === 'wav' ? 'wav' : audioFormat === 'original' ? 'audio-original' : 'original';
   else if (payload.mode === 'video') preset = 'original';
-  const still = preset === 'still';
-  const clip = still ? null : validClip(payload.clip);
-  const stillSec = still ? Number(payload.stillSec) || 0 : undefined;
-  return { preset, audioFormat, clip, accurate: !!(payload.accurate && clip), stillSec };
+  const clip = validClip(payload.clip);
+  return { preset, audioFormat, clip, accurate: !!(payload.accurate && clip) };
 }
 
 // Blocks ProRes jobs that wouldn't fit on the disk (free space under 1.2x the estimate).
@@ -649,7 +647,6 @@ ipcMain.handle('start-download', async (event, payload) => {
         duration: job.durationSec,
         preset: request.preset,
         encoders,
-        stillSec: request.stillSec,
         accurate: request.accurate,
         keepOriginal: settings.getSettings().keepOriginal,
         saveThumbnail: ytdlpThumbs && thumbWant.save,

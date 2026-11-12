@@ -12,7 +12,6 @@ const PRESETS = {
   prores422hq: { label: 'ProRes 422 HQ', convert: true, ext: 'mov', needs: 'prores', profile: 3, mbpsAt1080p30: 147 * 1.5, large: true },
   wav: { label: 'Audio only (WAV)', convert: true, ext: 'wav', audioOnly: true },
   'audio-original': { label: 'Audio only (original)', convert: false, audioOnly: true },
-  still: { label: 'Still frame (PNG)', convert: true, ext: 'png', still: true },
 };
 
 function isPresetId(id) {
@@ -139,13 +138,10 @@ function matchedBitrate(probeInfo) {
 }
 
 // Arguments for the second step: source file in, preset file out.
-function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output, stillSec = 0 }) {
+function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output }) {
   const preset = PRESETS[presetId];
   const base = ['-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats'];
 
-  if (preset.still) {
-    return [...base, '-ss', String(Number(stillSec).toFixed(3)), '-i', input, '-frames:v', '1', output];
-  }
   if (presetId === 'wav') {
     return [...base, '-i', input, '-vn', '-map', '0:a:0', '-c:a', 'pcm_s24le', '-ar', '48000', output];
   }

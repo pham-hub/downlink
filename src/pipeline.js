@@ -104,7 +104,6 @@ function startJob(options, hooks) {
           probeInfo,
           input: sourceFile,
           output,
-          stillSec: options.stillSec,
         });
     } else if (options.mode === 'audio') {
       ext = options.audioFormat === 'mp3' ? 'mp3' : 'm4a';
@@ -135,7 +134,7 @@ function startJob(options, hooks) {
     const run = runFfmpeg({
       ffmpegPath: options.ffmpegPath,
       args: args(output),
-      durationSec: preset.still ? 0 : probeInfo.durationSec,
+      durationSec: probeInfo.durationSec,
       onProgress: (percent) => hooks.onProgress({ stage: 'processing', step: 'Convert', percent }),
     });
     current = run;

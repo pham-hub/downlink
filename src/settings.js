@@ -11,7 +11,7 @@ const DEFAULTS = {
   // v1.1
   sniffFallback: true,
   defaultPreset: 'original',
-  defaultQuality: 'best-compatible',
+  defaultQuality: 'best-quality',
   clipboardWatch: 'on-focus', // 'off' | 'on-focus' | 'background'
   saveThumbnail: false,
   embedThumbnail: true,

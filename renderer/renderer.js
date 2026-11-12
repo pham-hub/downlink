@@ -35,10 +35,11 @@ const clipAccurate = $('clip-accurate');
 const clipField = $('clip-field');
 const presetField = $('preset-field');
 const presetSelect = $('preset-select');
-const presetHint = $('preset-hint');
 const presetError = $('preset-error');
-const stillFields = $('still-fields');
-const stillTime = $('still-time');
+const convertToggle = $('convert-toggle');
+const convertBody = $('convert-body');
+const presetNote = $('preset-note');
+const planSummary = $('plan-summary');
 const thumbField = $('thumb-field');
 const thumbSave = $('thumb-save');
 const thumbEmbed = $('thumb-embed');
@@ -81,7 +82,11 @@ const STEP_LABELS = {
 const state = {
   settings: { mode: 'both', defaultQuality: 'best-compatible', audioFormat: 'mp3', lastFolder: null },
   info: null,
-  preset: 'original',
+  preset: 'original', // what will run: 'original' unless Convert is on
+  convertOn: false,
+  convertPreset: 'prores422',
+  qualityTouched: false,
+  qualityConverting: false,
   presets: [{ id: 'original', label: 'Original' }],
   estimate: null,
   formats: null,
@@ -218,7 +223,7 @@ function openSettings() {
   state.presets.forEach((p) => {
     const option = document.createElement('option');
     option.value = p.id;
-    option.textContent = p.label;
+    option.textContent = p.id === 'original' ? 'None' : CONVERT_LABELS[p.id] || p.label;
     set.appendChild(option);
   });
   set.value = state.settings.defaultPreset || 'original';
@@ -388,9 +393,9 @@ function applyRedownload(entry) {
   state.pendingRedownload = null;
   if (entry.mode) state.settings.mode = entry.mode;
   if (entry.audioFormat) state.settings.audioFormat = entry.audioFormat;
-  if (state.presets.some((p) => p.id === entry.preset)) {
-    state.preset = entry.preset;
-    presetSelect.value = entry.preset;
+  if (state.presets.some((p) => p.id === entry.preset && p.id !== 'original')) {
+    state.convertOn = true;
+    state.convertPreset = entry.preset;
   }
   renderOptions();
   const choice = entry.qualityChoice;
@@ -425,7 +430,6 @@ async function initMain() {
   state.settings = await window.api.getSettings();
   folderPathEl.textContent = displayFolder(state.settings.lastFolder);
   folderPathEl.title = state.settings.lastFolder || '';
-  state.preset = state.settings.defaultPreset || 'original';
   loadPresets();
   renderOptions();
   urlInput.focus();
@@ -547,8 +551,11 @@ async function settleFetch(pending, url) {
   state.formats = result.formats;
   state.fetchedUrl = url;
   renderPreview(result.info);
-  state.preset = state.presets.some((p) => p.id === state.settings.defaultPreset) ? state.settings.defaultPreset : 'original';
-  presetSelect.value = state.preset;
+  // A new link starts from your defaults: Convert on only if you set a default conversion.
+  const dflt = state.settings.defaultPreset;
+  state.convertOn = state.presets.some((p) => p.id === dflt && p.id !== 'original');
+  if (state.convertOn) state.convertPreset = dflt;
+  state.qualityTouched = false;
   thumbSave.checked = !!state.settings.saveThumbnail;
   thumbEmbed.checked = state.settings.embedThumbnail !== false;
   renderOptions();
@@ -662,15 +669,18 @@ const CODEC_LABELS = { h264: 'H.264', hevc: 'HEVC', vp9: 'VP9', av1: 'AV1', othe
 
 // Best compatible (H.264) and Best quality (any codec) come first, then one entry per height.
 // The Advanced list has every individual format for the rare case that needs one.
-// A converting preset re-encodes whatever it downloads, so the codec choice means nothing there:
-// the picker offers "Best available" and the heights instead of compatible/best.
+// With Convert on, whatever is downloaded gets re-encoded, so the codec choice means nothing:
+// the list is "Best quality" plus the heights. Without it, "Max compatibility (H.264)" is offered.
 function presetConverts() {
-  return effectiveMode() === 'both' && ['h264', 'prores422', 'prores422hq', 'still'].includes(state.preset);
+  return effectiveMode() === 'both' && state.convertOn;
 }
 
 function renderQualityOptions() {
   const f = state.formats;
   const converting = presetConverts();
+  state.qualityConverting = converting;
+  const previous = state.qualityTouched ? qualitySelect.value : null;
+  const previousFormat = state.qualityTouched ? formatSelect.value : '';
   const qualities = f ? f.qualities.filter((q) => PREFERRED_TIERS.includes(q.tier) || f.qualities.length < 3) : [];
   qualitySelect.innerHTML = '';
   const add = (value, text) => {
@@ -679,21 +689,17 @@ function renderQualityOptions() {
     option.textContent = text;
     qualitySelect.appendChild(option);
   };
-  if (converting) {
-    add('best-quality', 'Best available');
-    qualities.forEach((q) => add(`tier-${q.tier}`, q.label));
-  } else {
-    add('best-compatible', 'Best compatible (H.264)');
-    add('best-quality', 'Best quality (any codec)');
-    qualities.forEach((q) => add(`tier-${q.tier}`, q.h264 ? q.label : `${q.label} · no H.264`));
-  }
+  add('best-quality', 'Best quality');
+  if (!converting && f && f.options.some((o) => o.vcodec === 'h264')) add('best-compatible', 'Max compatibility (H.264)');
+  qualities.forEach((q) => add(`tier-${q.tier}`, !converting && !q.h264 ? `${q.label} · no H.264` : q.label));
 
-  // Remembered choice: the same height if it's offered, else the nearest one below.
-  const saved = state.settings.defaultQuality || 'best-compatible';
-  let choice = converting ? 'best-quality' : 'best-compatible';
-  if (saved === 'best-quality') choice = saved;
-  else if (saved.startsWith('tier-')) {
-    const match = qualities.find((q) => q.tier <= Number(saved.slice(5)));
+  // The saved default, else what the user picked on this link: the same height if it's offered,
+  // else the nearest one below.
+  const wanted = previous || state.settings.defaultQuality || 'best-quality';
+  let choice = 'best-quality';
+  if (wanted === 'best-compatible' && !converting && qualitySelect.querySelector('option[value="best-compatible"]')) choice = wanted;
+  else if (wanted.startsWith('tier-')) {
+    const match = qualities.find((q) => q.tier <= Number(wanted.slice(5)));
     if (match) choice = `tier-${match.tier}`;
   }
   qualitySelect.value = choice;
@@ -709,6 +715,7 @@ function renderQualityOptions() {
     option.textContent = `${o.label}${o.hasAudio ? ' · with audio' : ''}`;
     formatSelect.appendChild(option);
   });
+  if (previousFormat && formatSelect.querySelector(`option[value="${CSS.escape(previousFormat)}"]`)) formatSelect.value = previousFormat;
   show(advancedWrap, !!(f && f.options && f.options.length));
   renderQualityHint();
 }
@@ -757,11 +764,14 @@ function renderOptions() {
   });
 
   show(qualityField, mode !== 'audio');
-  show(presetField, mode === 'both');
-  show(clipField, !(mode === 'both' && state.preset === 'still'));
-  show(stillFields, mode === 'both' && state.preset === 'still');
   show(audioField, mode === 'audio');
   renderQualityOptions();
+  renderConvert();
+  // Turning Convert on or off changes the quality list's shape.
+  if (state.qualityConverting !== presetConverts()) {
+    renderQualityOptions();
+    renderConvert();
+  }
 
   audioControl.querySelectorAll('button').forEach((btn) => {
     const selected = btn.dataset.format === state.settings.audioFormat;
@@ -770,27 +780,27 @@ function renderOptions() {
   });
   audioHint.textContent = AUDIO_HINTS[state.settings.audioFormat] || '';
 
-  renderPresetHint();
+  renderPresetError();
+  renderPlan();
   renderThumbnailField();
   clipEnd.placeholder = state.info && state.info.duration ? formatDuration(state.info.duration) : 'end';
   validateClip();
   updateDownloadButton();
 }
 
-const PRESET_SELECTABLE = ['original', 'h264', 'prores422', 'prores422hq', 'still'];
+const PRESET_SELECTABLE = ['original', 'h264', 'prores422', 'prores422hq'];
+
+const CONVERT_LABELS = { h264: 'H.264 MP4', prores422: 'ProRes 422', prores422hq: 'ProRes 422 HQ' };
+const CONVERT_NOTES = {
+  h264: 'Re-encodes to H.264 in an MP4. Plays almost anywhere.',
+  prores422: 'For editing in Premiere or Resolve. Very large files.',
+  prores422hq: 'Higher quality ProRes for editing. Very large files.',
+};
+const CODEC_RANK = ['av1', 'vp9', 'hevc', 'h264', 'other'];
 
 async function loadPresets() {
   const all = await window.api.getPresets();
   state.presets = all.filter((p) => PRESET_SELECTABLE.includes(p.id));
-  presetSelect.innerHTML = '';
-  state.presets.forEach((p) => {
-    const option = document.createElement('option');
-    option.value = p.id;
-    option.textContent = p.label;
-    presetSelect.appendChild(option);
-  });
-  if (!state.presets.some((p) => p.id === state.preset)) state.preset = 'original';
-  presetSelect.value = state.preset;
   renderOptions();
 }
 
@@ -798,66 +808,152 @@ function formatBytes(bytes) {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 }
 
+// The stream the current choice will download, worked out from the formats the link offers.
+// It's a prediction (yt-dlp makes the final pick), good enough to say what you're getting.
+function predictedVideo() {
+  const f = state.formats;
+  if (!f || !f.options || !f.options.length) return null;
+  const options = f.options;
+  const best = (list) =>
+    [...list].sort(
+      (a, b) =>
+        b.height - a.height ||
+        (b.fps || 0) - (a.fps || 0) ||
+        (b.hdr ? 1 : 0) - (a.hdr ? 1 : 0) ||
+        CODEC_RANK.indexOf(a.vcodec) - CODEC_RANK.indexOf(b.vcodec)
+    )[0];
+  const preferH264 = (list) => {
+    const h264 = list.filter((o) => o.vcodec === 'h264');
+    return best(h264.length ? h264 : list);
+  };
+  const q = selectedQuality();
+  if (q.kind === 'format') return options.find((o) => o.id === q.formatId) || null;
+  if (q.kind === 'compatible') return preferH264(options);
+  if (q.kind === 'tier') {
+    const under = options.filter((o) => o.height <= q.resolution);
+    const pool = under.length ? under : options;
+    const top = Math.max(...pool.map((o) => o.height));
+    return preferH264(pool.filter((o) => o.height === top));
+  }
+  return best(options);
+}
+
+// Convert after download: off unless asked for. H.264 isn't offered when the source already is
+// H.264, since re-encoding it would only lose quality.
+function convertTargets() {
+  if (effectiveMode() !== 'both') return [];
+  const source = predictedVideo();
+  return state.presets.filter((p) => p.id !== 'original' && !(p.id === 'h264' && source && source.vcodec === 'h264'));
+}
+
+function renderConvert() {
+  const targets = convertTargets();
+  show(presetField, targets.length > 0);
+  if (!targets.length) {
+    state.preset = 'original';
+    return;
+  }
+  convertToggle.checked = state.convertOn;
+  show(convertBody, state.convertOn);
+  presetSelect.innerHTML = '';
+  targets.forEach((p) => {
+    const option = document.createElement('option');
+    option.value = p.id;
+    option.textContent = CONVERT_LABELS[p.id] || p.label;
+    presetSelect.appendChild(option);
+  });
+  if (!targets.some((p) => p.id === state.convertPreset)) state.convertPreset = targets[0].id;
+  presetSelect.value = state.convertPreset;
+  presetNote.textContent = CONVERT_NOTES[state.convertPreset] || '';
+  state.preset = state.convertOn ? state.convertPreset : 'original';
+}
+
 // ProRes files are big: say how big before starting, and stop if the disk can't hold it.
 async function refreshEstimate() {
   state.estimate = null;
   const large = state.presets.find((p) => p.id === state.preset && p.large);
-  if (!large || !state.jobId) return renderPresetHint();
+  if (!large || !state.jobId) {
+    renderPresetError();
+    return renderPlan();
+  }
   const { clip } = selectedClip();
   const q = selectedQuality();
   const clipSeconds = clip ? (clip.end == null ? state.info.duration : clip.end) - clip.start : null;
   state.estimate = await window.api.estimateOutput({
     jobId: state.jobId, preset: state.preset, height: q.kind === 'tier' ? q.resolution : null, clipSeconds,
   });
-  renderPresetHint();
+  renderPresetError();
+  renderPlan();
   updateDownloadButton();
 }
 
-function renderPresetHint() {
+function renderPresetError() {
   const e = state.estimate;
   const large = state.presets.find((p) => p.id === state.preset && p.large);
-  show(presetHint, !!(large && e && e.bytes));
   show(presetError, false);
-  if (large && e && e.bytes) {
-    presetHint.textContent = `≈ ${formatBytes(e.bytes)}${e.bytes >= 1e9 ? ' (large file)' : ''}`;
-    if (e.freeBytes != null && e.freeBytes < e.bytes * 1.2) {
-      presetError.textContent = 'Your disk is full.';
-      show(presetError, true);
-    }
+  if (large && e && e.bytes && e.freeBytes != null && e.freeBytes < e.bytes * 1.2) {
+    presetError.textContent = 'Your disk is full.';
+    show(presetError, true);
   }
 }
 
-presetSelect.addEventListener('change', () => {
-  state.preset = presetSelect.value;
+// One line saying what will land in the folder.
+function renderPlan() {
+  const mode = effectiveMode();
+  const v = predictedVideo();
+  if (!state.info || mode === 'audio') return show(planSummary, false);
+  const codec = v ? [CODEC_LABELS[v.vcodec], v.hdr ? 'HDR' : ''].filter(Boolean).join(' ') : '';
+  const source = v ? [v.height ? `${v.height}p` : '', codec].filter(Boolean).join(' ') : '';
+  let text;
+  if (state.preset !== 'original') {
+    const label = CONVERT_LABELS[state.preset];
+    const ext = state.preset === 'h264' ? 'MP4' : 'MOV';
+    const size = state.estimate && state.estimate.bytes ? ` · ≈ ${formatBytes(state.estimate.bytes)}` : '';
+    text = `${source ? `${source} → ` : ''}${label} ${ext}${size}`;
+  } else {
+    const size = v && v.estBytes ? ` · ~${formatBytes(v.estBytes)}` : '';
+    text = ['MP4', codec, v && v.height ? `${v.height}p` : '', mode === 'both' ? 'AAC' : ''].filter(Boolean).join(' · ') + size;
+  }
+  planSummary.textContent = text;
+  show(planSummary, true);
+}
+
+convertToggle.addEventListener('change', () => {
+  state.convertOn = convertToggle.checked;
   renderOptions();
   refreshEstimate();
 });
 
-stillTime.addEventListener('input', updateDownloadButton);
+presetSelect.addEventListener('change', () => {
+  state.convertPreset = presetSelect.value;
+  renderOptions();
+  refreshEstimate();
+});
+
 clipAccurate.addEventListener('change', () => {
   $('clip-cut-hint').textContent = clipAccurate.checked
     ? 'Frame-accurate. Slower, because the video is re-encoded around the cuts.'
     : 'Fast cut may start up to a few seconds early.';
 });
 
-// Cover art goes in MP4, M4A, MP3 and MKV; not into ProRes (.mov) or WAV, and a still is just a PNG.
+// Cover art goes in MP4, M4A, MP3 and MKV; not into ProRes (.mov) or WAV.
 function thumbEmbedAllowed() {
   const mode = effectiveMode();
   if (mode === 'audio') return state.settings.audioFormat !== 'wav';
-  if (mode === 'both') return !['prores422', 'prores422hq', 'still'].includes(state.preset);
+  if (mode === 'both') return !['prores422', 'prores422hq'].includes(state.preset);
   return true;
 }
 
 function renderThumbnailField() {
   const mode = effectiveMode();
-  show(thumbField, !(mode === 'both' && state.preset === 'still'));
+  show(thumbField, true);
   const allowed = thumbEmbedAllowed();
   thumbEmbed.disabled = !allowed;
   show(thumbHint, !allowed);
 }
 
 function selectedClip() {
-  if (!clipToggle.checked || state.preset === 'still') return { clip: null, error: null };
+  if (!clipToggle.checked) return { clip: null, error: null };
   const fps = state.info && state.info.fps;
   const startResult = Timecode.parse(clipStart.value, fps);
   const endResult = Timecode.parse(clipEnd.value, fps);
@@ -874,16 +970,6 @@ function selectedClip() {
   if (duration && end != null && end > duration + 1) return { error: `The video is only ${formatDuration(duration)} long.` };
   const clampedEnd = duration && end != null && end >= duration ? null : end;
   return { clip: { start: start || 0, end: clampedEnd }, error: null };
-}
-
-function selectedStill() {
-  const result = Timecode.parse(stillTime.value, state.info && state.info.fps);
-  const duration = state.info && state.info.duration;
-  stillTime.parentElement.classList.toggle('invalid', !!result.error);
-  if (result.error) return { error: result.error };
-  const value = result.value == null ? 0 : result.value;
-  if (duration && value >= duration) return { error: `The video is only ${formatDuration(duration)} long.` };
-  return { sec: value, error: null };
 }
 
 function validateClip() {
@@ -905,23 +991,16 @@ function validateClip() {
 
 function updateDownloadButton() {
   const mode = effectiveMode();
-  const still = mode === 'both' && state.preset === 'still';
-  const clipError = clipToggle.checked && !still ? selectedClip().error : null;
-  const stillError = still ? selectedStill().error : null;
+  const clipError = clipToggle.checked ? selectedClip().error : null;
   const noRoom = !!(state.estimate && state.estimate.freeBytes != null && state.estimate.bytes && state.estimate.freeBytes < state.estimate.bytes * 1.2);
-  downloadBtn.disabled =
-    !state.info || state.downloading || !state.settings.lastFolder || !!clipError || !!stillError || noRoom;
-  const clip = clipToggle.checked && !still ? ' clip' : '';
-  const presetName = state.presets.find((p) => p.id === state.preset);
+  downloadBtn.disabled = !state.info || state.downloading || !state.settings.lastFolder || !!clipError || noRoom;
+  const clip = clipToggle.checked ? ' clip' : '';
   const labels = {
-    both: still ? 'Save still frame' : `Download video${clip}`,
+    both: `Download video${clip}`,
     video: clip ? 'Download video-only clip' : 'Download video only',
     audio: `Download ${state.settings.audioFormat.toUpperCase()}${clip}`,
   };
   downloadBtn.textContent = labels[mode];
-  if (mode === 'both' && presetName && state.preset !== 'original' && !still) {
-    downloadBtn.textContent = `${labels[mode]} · ${presetName.label.replace(/ \(.*\)$/, '')}`;
-  }
 }
 
 // Arrow keys move between segmented options, like native radio groups.
@@ -955,13 +1034,21 @@ wireSegmented(audioControl, 'format', (format) => {
 
 qualitySelect.addEventListener('change', () => {
   formatSelect.value = '';
+  state.qualityTouched = true;
+  // Your default follows what you pick, except "Best quality" picked while converting.
   if (!(presetConverts() && qualitySelect.value === 'best-quality')) saveSetting('defaultQuality', qualitySelect.value);
   renderQualityHint();
+  renderConvert();
+  refreshEstimate();
+  renderPlan();
 });
 
 formatSelect.addEventListener('change', () => {
+  state.qualityTouched = true;
   renderQualityHint();
+  renderConvert();
   refreshEstimate();
+  renderPlan();
 });
 
 advancedToggle.addEventListener('click', () => {
@@ -971,6 +1058,8 @@ advancedToggle.addEventListener('click', () => {
   if (!open) {
     formatSelect.value = '';
     renderQualityHint();
+    renderConvert();
+    renderPlan();
   }
 });
 
@@ -1039,7 +1128,6 @@ downloadBtn.addEventListener('click', async () => {
     preset: state.preset,
     thumbnail: { save: thumbSave.checked, embed: thumbEmbed.checked && thumbEmbedAllowed() },
     accurate: clipAccurate.checked,
-    stillSec: state.preset === 'still' ? selectedStill().sec : undefined,
     audioFormat: state.settings.audioFormat,
     clip,
     duration: state.info.duration,
@@ -1063,8 +1151,7 @@ function showProgress(p) {
   if (!p) return;
   if (p.stage === 'processing') {
     if (p.step === 'Convert' && typeof p.percent === 'number') {
-      const what = state.preset === 'still' ? 'Saving still frame…' : 'Converting…';
-      setProgress({ percent: p.percent, stage: what, detail: '' });
+      setProgress({ percent: p.percent, stage: 'Converting…', detail: '' });
       return;
     }
     setProgress({ indeterminate: true, stage: STEP_LABELS[p.step] || 'Finishing up…' });
