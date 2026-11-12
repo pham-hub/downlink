@@ -39,6 +39,10 @@ const presetHint = $('preset-hint');
 const presetError = $('preset-error');
 const stillFields = $('still-fields');
 const stillTime = $('still-time');
+const thumbField = $('thumb-field');
+const thumbSave = $('thumb-save');
+const thumbEmbed = $('thumb-embed');
+const thumbHint = $('thumb-hint');
 const folderPathEl = $('folder-path');
 
 const downloadBtn = $('download-btn');
@@ -84,6 +88,8 @@ const state = {
   fetchedUrl: null,
   jobId: null,
   passwordJob: null,
+  screen: 'main',
+  pendingRedownload: null,
   downloading: false,
   cancelling: false,
   lastFile: null,
@@ -196,6 +202,14 @@ if (/Win/.test(navigator.platform)) document.documentElement.dataset.win = '';
 /* ---------- settings ---------- */
 
 const settingsScreen = $('settings-screen');
+const historyScreen = $('history-screen');
+
+function showScreen(name) {
+  show(mainScreen, name === 'main');
+  show(settingsScreen, name === 'settings');
+  show(historyScreen, name === 'history');
+  state.screen = name;
+}
 
 function openSettings() {
   const set = $('set-preset');
@@ -209,20 +223,161 @@ function openSettings() {
   set.value = state.settings.defaultPreset || 'original';
   $('set-keep').checked = !!state.settings.keepOriginal;
   $('set-sniff').checked = state.settings.sniffFallback !== false;
-  show(mainScreen, false);
-  show(settingsScreen, true);
+  $('set-thumb-save').checked = !!state.settings.saveThumbnail;
+  $('set-thumb-embed').checked = state.settings.embedThumbnail !== false;
+  showScreen('settings');
 }
 
-function closeSettings() {
-  show(settingsScreen, false);
-  show(mainScreen, true);
-}
-
-$('settings-btn').addEventListener('click', () => (settingsScreen.classList.contains('hidden') ? openSettings() : closeSettings()));
-$('settings-done').addEventListener('click', closeSettings);
+$('settings-btn').addEventListener('click', () => (state.screen === 'settings' ? showScreen('main') : openSettings()));
+$('settings-done').addEventListener('click', () => showScreen('main'));
 $('set-preset').addEventListener('change', (e) => saveSetting('defaultPreset', e.target.value));
 $('set-sniff').addEventListener('change', (e) => saveSetting('sniffFallback', e.target.checked));
 $('set-keep').addEventListener('change', (e) => saveSetting('keepOriginal', e.target.checked));
+$('set-thumb-save').addEventListener('change', (e) => saveSetting('saveThumbnail', e.target.checked));
+$('set-thumb-embed').addEventListener('change', (e) => saveSetting('embedThumbnail', e.target.checked));
+$('clear-history-btn').addEventListener('click', async () => {
+  if (await window.api.history.clear()) renderHistory();
+});
+
+/* ---------- history ---------- */
+
+const historySearch = $('history-search');
+const historyList = $('history-list');
+const thumbCache = new Map();
+let historyTimer = null;
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+
+function presetLabel(entry) {
+  if (entry.mode === 'audio') return entry.audioFormat ? entry.audioFormat.toUpperCase() : 'Audio';
+  const found = state.presets.find((p) => p.id === entry.preset);
+  return found ? found.label.replace(/ \(.*\)$/, '') : '';
+}
+
+async function loadThumb(img, id) {
+  if (!thumbCache.has(id)) thumbCache.set(id, window.api.history.thumb(id));
+  const url = await thumbCache.get(id);
+  if (url) img.src = url;
+}
+
+function historyAction(label, handler, disabled) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-small btn-ghost';
+  btn.textContent = label;
+  btn.disabled = !!disabled;
+  btn.addEventListener('click', handler);
+  return btn;
+}
+
+function historyRow(entry) {
+  const row = document.createElement('div');
+  row.className = 'history-row';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'history-thumb';
+  if (entry.hasThumb) {
+    const img = document.createElement('img');
+    img.alt = '';
+    thumb.appendChild(img);
+    loadThumb(img, entry.id);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'history-body';
+  const title = document.createElement('div');
+  title.className = 'history-title';
+  title.textContent = entry.title || entry.sourceUrl;
+  title.title = entry.title || '';
+  const meta = document.createElement('div');
+  meta.className = 'history-meta';
+  const date = new Date(entry.finishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  if (entry.status === 'failed') {
+    meta.textContent = [entry.site, date, 'Failed'].join(' · ');
+    meta.classList.add('is-failed');
+  } else if (!entry.fileExists) {
+    meta.textContent = [entry.site, date, 'File moved or deleted'].join(' · ');
+  } else {
+    meta.textContent = [entry.site, date, formatSize(entry.bytes), presetLabel(entry)].filter(Boolean).join(' · ');
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'history-actions';
+  const gone = entry.status === 'failed' || !entry.fileExists;
+  actions.append(
+    historyAction('Show in ' + (/Win/.test(navigator.platform) ? 'Explorer' : 'Finder'), () => window.api.history.show(entry.id), gone),
+    historyAction('Open', () => window.api.history.open(entry.id), gone),
+    historyAction('Re-download', () => redownload(entry)),
+    historyAction('Copy link', () => window.api.history.copyLink(entry.id)),
+    historyAction('Remove', async () => {
+      await window.api.history.remove(entry.id);
+      renderHistory();
+    })
+  );
+  body.append(title, meta, actions);
+  row.append(thumb, body);
+  return row;
+}
+
+async function renderHistory() {
+  const entries = await window.api.history.list(historySearch.value);
+  historyList.textContent = '';
+  entries.slice(0, 300).forEach((entry) => historyList.appendChild(historyRow(entry)));
+  const empty = $('history-empty');
+  empty.textContent = historySearch.value.trim() ? 'No matches' : 'Nothing here yet';
+  show(empty, entries.length === 0);
+}
+
+$('history-btn').addEventListener('click', () => {
+  if (state.screen === 'history') return showScreen('main');
+  showScreen('history');
+  renderHistory();
+});
+historySearch.addEventListener('input', () => {
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(renderHistory, 120);
+});
+
+// A new job with the same link and options. Captured streams are captured again from the page,
+// and a password-protected video asks for its password again.
+function redownload(entry) {
+  if (state.downloading) return;
+  showScreen('main');
+  state.pendingRedownload = entry;
+  urlInput.value = entry.sourceUrl;
+  urlForm.requestSubmit();
+}
+
+function applyRedownload(entry) {
+  state.pendingRedownload = null;
+  if (entry.mode) state.settings.mode = entry.mode;
+  if (entry.audioFormat) state.settings.audioFormat = entry.audioFormat;
+  if (state.presets.some((p) => p.id === entry.preset)) {
+    state.preset = entry.preset;
+    presetSelect.value = entry.preset;
+  }
+  renderOptions();
+  const choice = entry.qualityChoice;
+  if (choice && state.formats) {
+    if (choice.kind === 'best') qualitySelect.value = 'best-quality';
+    else if (choice.kind === 'tier' && choice.resolution) {
+      const q = state.formats.qualities.find((x) => x.res === choice.resolution);
+      if (q) qualitySelect.value = `tier-${q.tier}`;
+    } else if (choice.kind === 'format' && state.formats.options.some((o) => o.id === choice.formatId)) {
+      formatSelect.value = choice.formatId;
+    }
+    renderQualityHint();
+  }
+  if (entry.clip) {
+    clipToggle.checked = true;
+    clipStart.value = Timecode.format(entry.clip.startSec);
+    clipEnd.value = Timecode.format(entry.clip.endSec);
+    renderOptions();
+  }
+}
 
 /* ---------- window sizing ---------- */
 
@@ -347,6 +502,7 @@ async function settleFetch(pending, url) {
   hidePasswordPrompt();
 
   if (!result.success) {
+    state.pendingRedownload = null;
     resetPreview();
     renderError(previewError, result.error, { retry: () => urlForm.requestSubmit() });
     return;
@@ -359,8 +515,11 @@ async function settleFetch(pending, url) {
   renderPreview(result.info);
   state.preset = state.presets.some((p) => p.id === state.settings.defaultPreset) ? state.settings.defaultPreset : 'original';
   presetSelect.value = state.preset;
+  thumbSave.checked = !!state.settings.saveThumbnail;
+  thumbEmbed.checked = state.settings.embedThumbnail !== false;
   renderOptions();
   refreshEstimate();
+  if (state.pendingRedownload) applyRedownload(state.pendingRedownload);
   downloadBtn.focus();
 }
 
@@ -559,6 +718,7 @@ function renderOptions() {
   audioHint.textContent = AUDIO_HINTS[state.settings.audioFormat] || '';
 
   renderPresetHint();
+  renderThumbnailField();
   clipEnd.placeholder = state.info && state.info.duration ? formatDuration(state.info.duration) : 'end';
   validateClip();
   updateDownloadButton();
@@ -626,6 +786,22 @@ clipAccurate.addEventListener('change', () => {
     ? 'Frame-accurate. Slower, because the video is re-encoded around the cuts.'
     : 'Fast cut may start up to a few seconds early.';
 });
+
+// Cover art goes in MP4, M4A, MP3 and MKV; not into ProRes (.mov) or WAV, and a still is just a PNG.
+function thumbEmbedAllowed() {
+  const mode = effectiveMode();
+  if (mode === 'audio') return state.settings.audioFormat !== 'wav';
+  if (mode === 'both') return !['prores422', 'prores422hq', 'still'].includes(state.preset);
+  return true;
+}
+
+function renderThumbnailField() {
+  const mode = effectiveMode();
+  show(thumbField, !(mode === 'both' && state.preset === 'still'));
+  const allowed = thumbEmbedAllowed();
+  thumbEmbed.disabled = !allowed;
+  show(thumbHint, !allowed);
+}
 
 function selectedClip() {
   if (!clipToggle.checked || state.preset === 'still') return { clip: null, error: null };
@@ -808,6 +984,7 @@ downloadBtn.addEventListener('click', async () => {
     mode,
     quality: selectedQuality(),
     preset: state.preset,
+    thumbnail: { save: thumbSave.checked, embed: thumbEmbed.checked && thumbEmbedAllowed() },
     accurate: clipAccurate.checked,
     stillSec: state.preset === 'still' ? selectedStill().sec : undefined,
     audioFormat: state.settings.audioFormat,

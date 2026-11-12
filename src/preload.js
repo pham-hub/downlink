@@ -15,6 +15,16 @@ contextBridge.exposeInMainWorld('api', {
   onJobUpdate: (cb) => ipcRenderer.on('job-update', (event, snapshot) => cb(snapshot)),
   getPresets: () => ipcRenderer.invoke('get-presets'),
   estimateOutput: (args) => ipcRenderer.invoke('estimate-output', args),
+  history: {
+    list: (query) => ipcRenderer.invoke('history-list', query),
+    thumb: (id) => ipcRenderer.invoke('history-thumb', id),
+    get: (id) => ipcRenderer.invoke('history-get', id),
+    remove: (id) => ipcRenderer.invoke('history-remove', id),
+    show: (id) => ipcRenderer.invoke('history-show', id),
+    open: (id) => ipcRenderer.invoke('history-open', id),
+    copyLink: (id) => ipcRenderer.invoke('history-copy-link', id),
+    clear: () => ipcRenderer.invoke('history-clear'),
+  },
   openFolder: () => ipcRenderer.invoke('open-folder'),
 
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),

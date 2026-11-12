@@ -102,7 +102,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle, password }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle, password, embedThumbnail, saveThumbnail }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -133,14 +133,15 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode,
     const fmt = AUDIO_FORMATS[audioFormat] ? audioFormat : 'mp3';
     const spec = AUDIO_FORMATS[fmt];
     args.push('-f', spec.selector, '-x', '--audio-format', spec.keep ? 'best' : fmt, ...spec.extra);
-    if (spec.coverArt) args.push('--embed-thumbnail');
+    if (spec.coverArt && embedThumbnail) args.push('--embed-thumbnail');
   } else if (intermediate) {
     // First half of a converting preset: the best-quality source goes to the job's temp folder
     // untouched, and ffmpeg makes the final file from it.
     if (audioOnlySource) args.push('-f', 'ba/b');
     else args.push('-f', 'bv*+ba/b', '-S', 'res,fps,hdr:12,vcodec,acodec', '--merge-output-format', 'mkv');
   } else if (mode === 'video') {
-    args.push('-f', formatId || 'bv', '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
+    args.push('-f', formatId || 'bv', '-S', sort, '--remux-video', 'mp4');
+    if (embedThumbnail) args.push('--embed-thumbnail');
     tags.push('video only');
   } else {
     // AAC audio either way so the .mp4 plays in QuickTime; the video codec follows the user's preference.
@@ -150,10 +151,13 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode,
       // A format picked from the Advanced list is used as chosen; a video-only one gets the best audio.
       '-f', formatId ? (formatHasAudio ? formatId : `${formatId}+ba/${formatId}`) : 'bv+ba/b/bv*',
       '-S', `${sort},acodec:aac`,
-      '--merge-output-format', 'mp4',
-      '--embed-thumbnail'
+      '--merge-output-format', 'mp4'
     );
+    if (embedThumbnail) args.push('--embed-thumbnail');
   }
+
+  // The saved copy lands next to the video as <name>.jpg.
+  if (saveThumbnail && !intermediate) args.push('--write-thumbnail', '--convert-thumbnails', 'jpg');
 
   let clipSuffix = '';
   if (clip) {

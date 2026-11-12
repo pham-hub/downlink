@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell, Notification, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, Notification, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -7,6 +7,8 @@ const settings = require('./settings');
 const { fetchInfo } = require('./downloader');
 const { startJob } = require('./pipeline');
 const presets = require('./presets');
+const thumbs = require('./thumbs');
+const history = require('./history');
 const { summarizeFormats, summarizeVariants } = require('./formats');
 const { sniff } = require('./sniff');
 const { startSniffSource, safeName } = require('./sniff/source');
@@ -251,6 +253,7 @@ async function resolveJob(job) {
       durationSec: info.duration || undefined,
       fps: bestFps(formats),
       formats: formats.options,
+      thumbnailUrl: info.thumbnail || undefined,
       wrongPassword: false,
       task: undefined,
     });
@@ -324,6 +327,8 @@ async function captureStream(job) {
       fps: bestFps(summary),
       formats: summary.options,
       sniff: result,
+      thumbnailUrl: result.posterUrl,
+      thumbnailHeaders: result.headers,
       task: undefined,
     });
     return {
@@ -475,6 +480,110 @@ function checkRoom(job, request, payload) {
   return null;
 }
 
+// Cover image for conversions and captured streams; also the small copy for the History list.
+async function finishThumbnails(job, file, want, ytdlpHandled) {
+  const { ffmpegPath } = binaries.getPaths();
+  const cover = await thumbs.makeCover({
+    ffmpegPath,
+    dir: path.join(jobs.tempDir(job), 'cover'),
+    imageUrl: job.thumbnailUrl,
+    headers: job.thumbnailHeaders || {},
+    video: file,
+    durationSec: job.durationSec,
+  });
+  if (!cover) return undefined;
+  if (!ytdlpHandled) {
+    if (want.save) thumbs.saveNextTo(cover, file);
+    if (want.embed) await thumbs.embedCover({ ffmpegPath, file, cover });
+  }
+  return thumbs.makeSmall({ ffmpegPath, cover, dest: history.thumbPathFor(job.id) });
+}
+
+function describeQuality(job, q) {
+  const choice = q || {};
+  if (choice.kind === 'best') return 'Best quality';
+  if (choice.kind === 'tier') return choice.label || 'Chosen height';
+  if (choice.kind === 'format') {
+    const option = (job.formats || []).find((f) => f.id === choice.formatId);
+    return option ? option.label : 'Chosen format';
+  }
+  return 'Best compatible';
+}
+
+// One history entry per job. Only the page link the user pasted is kept: never a captured
+// stream URL, a token or a password.
+function recordHistory(job, status, { filePath, request, payload, thumbPath, errorCode }) {
+  try {
+    let bytes = 0;
+    if (filePath) {
+      try {
+        bytes = fs.statSync(filePath).size;
+      } catch {
+        // moved already
+      }
+    }
+    const clip = request.clip
+      ? { startSec: request.clip.start, endSec: request.clip.end == null ? job.durationSec : request.clip.end }
+      : undefined;
+    history.upsert(
+      {
+        id: job.id,
+        title: job.title,
+        sourceUrl: job.sourceUrl,
+        resolver: job.resolver,
+        site: new URL(job.sourceUrl).hostname.replace(/^www\./, ''),
+        outputPath: filePath || '',
+        preset: request.preset,
+        quality: describeQuality(job, payload.quality),
+        qualityChoice: payload.quality,
+        mode: payload.mode,
+        audioFormat: request.audioFormat,
+        clip,
+        thumbPath,
+        bytes,
+        durationSec: clip ? clip.endSec - clip.startSec : job.durationSec,
+        finishedAt: Date.now(),
+        status,
+        errorCode,
+      },
+      settings.getSettings().historyLimit
+    );
+  } catch (err) {
+    console.warn(`History write failed: ${err.message}`);
+  }
+}
+
+ipcMain.handle('history-list', (event, query) => history.list(query));
+ipcMain.handle('history-thumb', (event, id) => history.thumbDataUrl(id));
+ipcMain.handle('history-remove', (event, id) => history.remove(id));
+ipcMain.handle('history-get', (event, id) => history.find(id));
+ipcMain.handle('history-show', (event, id) => {
+  const entry = history.find(id);
+  if (entry && entry.outputPath && fs.existsSync(entry.outputPath)) shell.showItemInFolder(entry.outputPath);
+});
+ipcMain.handle('history-open', (event, id) => {
+  const entry = history.find(id);
+  if (entry && entry.outputPath && fs.existsSync(entry.outputPath)) return shell.openPath(entry.outputPath);
+});
+ipcMain.handle('history-copy-link', (event, id) => {
+  const entry = history.find(id);
+  if (entry) clipboard.writeText(entry.sourceUrl);
+});
+// Clearing asks first, in a native dialog, and says whether it went ahead.
+ipcMain.handle('history-clear', async () => {
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['Cancel', 'Clear History'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Clear download history?',
+    detail: 'Downloaded files are not deleted.',
+  });
+  if (response !== 1) return false;
+  history.clear();
+  return true;
+});
+
 ipcMain.handle('start-download', async (event, payload) => {
   if (activeDownload) return { started: false, error: errorFromCode('UNKNOWN', 'A download is already running.') };
   const job = jobs.get(payload && payload.jobId);
@@ -493,8 +602,18 @@ ipcMain.handle('start-download', async (event, payload) => {
       jobs.fail(job, blocked);
       return { started: false };
     }
+    const thumbWant = {
+      save: !!(payload.thumbnail && payload.thumbnail.save),
+      embed: !!(payload.thumbnail && payload.thumbnail.embed),
+    };
+    // yt-dlp saves and embeds the thumbnail itself when it does the whole job; conversions and
+    // captured streams get theirs from Downlink afterwards.
+    const preset = presets.PRESETS[request.preset];
+    const staged = (preset.convert && payload.mode !== 'video') || !!(job.resolver === 'sniff' && job.sniff && job.sniff.audio);
+    const ytdlpThumbs = job.resolver === 'ytdlp' && !staged;
     jobs.transition(job, 'downloading', {
       error: undefined, cancelled: false, progress: { percent: 0 }, preset: request.preset, clip: request.clip || undefined,
+      thumbnail: thumbWant,
     });
     activeDownload = startJob(
       {
@@ -514,6 +633,8 @@ ipcMain.handle('start-download', async (event, payload) => {
         stillSec: request.stillSec,
         accurate: request.accurate,
         keepOriginal: settings.getSettings().keepOriginal,
+        saveThumbnail: ytdlpThumbs && thumbWant.save,
+        embedThumbnail: ytdlpThumbs && thumbWant.embed,
       },
       {
         onProgress: (progress) => {
@@ -525,17 +646,31 @@ ipcMain.handle('start-download', async (event, payload) => {
             jobs.update(job, { progress });
           }
         },
-        onComplete: (result) => {
-          activeDownload = null;
+        onComplete: async (result) => {
           clearTaskbar(true);
+          // Finishing up (thumbnails, history) still counts as busy.
+          activeDownload = { cancel() {} };
+          let thumbPath;
+          if (result.filePath && !result.existing) {
+            try {
+              if (job.status === 'downloading') jobs.transition(job, 'processing', { progress: { stage: 'processing', step: 'Thumbnail' } });
+              thumbPath = await finishThumbnails(job, result.filePath, thumbWant, ytdlpThumbs);
+            } catch (err) {
+              console.warn(`Thumbnail step failed: ${err.message}`);
+            }
+          }
           if (result.filePath) savedFiles.add(result.filePath);
+          recordHistory(job, 'done', { filePath: result.filePath, request, payload, thumbPath });
+          activeDownload = null;
           jobs.transition(job, 'done', { outputPath: result.filePath || undefined, existing: !!result.existing });
           notifyComplete(result.filePath);
         },
         onError: (raw, source) => {
           activeDownload = null;
           clearTaskbar(false);
-          jobs.fail(job, toFriendly(job, { raw }, source));
+          const error = toFriendly(job, { raw }, source);
+          recordHistory(job, 'failed', { request, payload, errorCode: error.code });
+          jobs.fail(job, error);
         },
         onCancel: () => {
           activeDownload = null;

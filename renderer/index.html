@@ -13,10 +13,22 @@
       <img class="brand-logo" src="assets/pnr-mark.svg" alt="PNR Digital" />
       <span class="brand-divider" aria-hidden="true"></span>
       <span class="brand-app">Downlink</span>
+      <button id="history-btn" class="titlebar-btn titlebar-btn-history" type="button" aria-label="History" title="History">
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7M3.5 3.5v3h3M10 6.5V10l2.5 1.5" /></svg>
+      </button>
       <button id="settings-btn" class="titlebar-btn" type="button" aria-label="Settings" title="Settings">
         <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h8M15 5.5h2M3 10h2M9 10h8M3 14.5h8M15 14.5h2" /><circle cx="13" cy="5.5" r="1.8" /><circle cx="7" cy="10" r="1.8" /><circle cx="13" cy="14.5" r="1.8" /></svg>
       </button>
     </div>
+
+    <section id="history-screen" class="screen hidden">
+      <div class="history-search">
+        <svg class="icon url-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+        <input id="history-search" type="text" spellcheck="false" placeholder="Search title or site" aria-label="Search history" />
+      </div>
+      <div id="history-list" class="history-list"></div>
+      <p id="history-empty" class="hint muted hidden">Nothing here yet</p>
+    </section>
 
     <section id="settings-screen" class="screen hidden">
       <div class="card settings-card">
@@ -34,12 +46,20 @@
           </div>
         </div>
         <div class="field">
+          <label>Thumbnails</label>
+          <div class="field-body">
+            <label class="switch-row"><input id="set-thumb-save" type="checkbox" class="switch" /><span>Save thumbnail</span></label>
+            <label class="switch-row"><input id="set-thumb-embed" type="checkbox" class="switch" /><span>Embed thumbnail</span></label>
+          </div>
+        </div>
+        <div class="field">
           <label for="set-keep">Originals</label>
           <div class="field-body">
             <label class="switch-row"><input id="set-keep" type="checkbox" class="switch" /><span>Keep original too</span></label>
           </div>
         </div>
       </div>
+      <button id="clear-history-btn" class="btn btn-ghost btn-block" type="button">Clear history</button>
       <button id="settings-done" class="btn btn-secondary btn-block" type="button">Done</button>
     </section>
 
@@ -166,6 +186,15 @@
               <p id="clip-cut-hint" class="hint muted">Fast cut may start up to a few seconds early.</p>
             </div>
             <p id="clip-error" class="hint error-text hidden"></p>
+          </div>
+        </div>
+
+        <div class="field" id="thumb-field">
+          <label>Thumbnail</label>
+          <div class="field-body">
+            <label class="switch-row"><input id="thumb-save" type="checkbox" class="switch" /><span>Save thumbnail</span></label>
+            <label class="switch-row"><input id="thumb-embed" type="checkbox" class="switch" /><span>Embed thumbnail</span></label>
+            <p id="thumb-hint" class="hint muted hidden">Embedding not supported for this format</p>
           </div>
         </div>
 
