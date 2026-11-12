@@ -142,15 +142,6 @@ function isWebUrl(url) {
   return typeof url === 'string' && /^https?:\/\/\S+$/i.test(url.trim());
 }
 
-// Vimeo only allows downloads when signed in, which this app deliberately doesn't do.
-function isVimeo(url) {
-  try {
-    return /(^|\.)vimeo\.com$/i.test(new URL(url.trim()).hostname);
-  } catch {
-    return false;
-  }
-}
-
 ipcMain.handle('get-presets', async () => {
   await loadEncodersOnce();
   return presets.availablePresets(encoders).map((id) => ({ id, label: presets.PRESETS[id].label, large: !!presets.PRESETS[id].large }));
@@ -232,7 +223,6 @@ function toFriendly(job, err, source) {
 
 ipcMain.handle('fetch-info', async (event, url) => {
   if (!isWebUrl(url)) return { success: false, error: errorFromCode('INVALID_URL') };
-  if (isVimeo(url)) return { success: false, error: errorFromCode('VIMEO') };
 
   let job;
   try {
@@ -241,8 +231,16 @@ ipcMain.handle('fetch-info', async (event, url) => {
     return { success: false, error: errorFromCode('UNKNOWN', err.message) };
   }
   jobs.transition(job, 'resolving');
+  return resolveJob(job);
+});
+
+const MAX_PASSWORD_TRIES = 3;
+
+// Reads the link with yt-dlp (`-J`). A password-protected video waits for the user in
+// `awaiting_input`; a page yt-dlp can't read goes on to stream capture.
+async function resolveJob(job) {
   try {
-    const task = fetchInfo(binaries.getPaths(), job.sourceUrl);
+    const task = fetchInfo(binaries.getPaths(), job.sourceUrl, { password: job.password });
     job.task = task;
     const info = await task;
     // The user moved on to another link while this one loaded.
@@ -253,6 +251,7 @@ ipcMain.handle('fetch-info', async (event, url) => {
       durationSec: info.duration || undefined,
       fps: bestFps(formats),
       formats: formats.options,
+      wrongPassword: false,
       task: undefined,
     });
     return {
@@ -270,14 +269,40 @@ ipcMain.handle('fetch-info', async (event, url) => {
     };
   } catch (err) {
     if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    const error = toFriendly(job, err);
+    if (error.code === 'PASSWORD' || error.code === 'WRONG_PASSWORD') return askForPassword(job, error);
     // yt-dlp can't read the page: let the site's own player show us the stream instead.
     if (/Unsupported URL|No video formats found/i.test((err && err.raw) || '') && settings.getSettings().sniffFallback) {
       return captureStream(job);
     }
-    const error = toFriendly(job, err);
     jobs.fail(job, error);
     return { success: false, jobId: job.id, error };
   }
+}
+
+// The card shows a password field. Three wrong tries and the job fails.
+function askForPassword(job, error) {
+  const wrong = error.code === 'WRONG_PASSWORD';
+  job.password = undefined;
+  if (wrong) job.passwordTries = (job.passwordTries || 0) + 1;
+  if (wrong && job.passwordTries >= MAX_PASSWORD_TRIES) {
+    const failure = errorFromCode('WRONG_PASSWORD', error.details);
+    jobs.fail(job, failure);
+    return { success: false, jobId: job.id, error: failure };
+  }
+  jobs.transition(job, 'awaiting_input', { needs: 'password', wrongPassword: wrong, task: undefined });
+  return { success: false, needsPassword: true, wrongPassword: wrong, jobId: job.id, tries: job.passwordTries || 0 };
+}
+
+// Unlock: tries the same link again with the password the user typed.
+ipcMain.handle('submit-password', async (event, { jobId, password }) => {
+  const job = jobs.get(jobId);
+  if (!job || job.status !== 'awaiting_input' || typeof password !== 'string' || !password) {
+    return { success: false, stale: true };
+  }
+  job.password = password;
+  jobs.transition(job, 'resolving', { needs: undefined });
+  return resolveJob(job);
 });
 
 // Stream capture fallback (spec section 1): a hidden window loads the page and notes the stream.
@@ -477,6 +502,7 @@ ipcMain.handle('start-download', async (event, payload) => {
         url: job.sourceUrl,
         folder: payload.folder,
         tempDir: jobs.tempDir(job),
+        password: job.password,
         mode: payload.mode,
         ...resolveQuality(job, payload.quality),
         ...(job.resolver === 'sniff' ? sniffOptions(job, request, payload, binaries.getPaths()) : {}),

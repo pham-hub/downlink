@@ -899,3 +899,45 @@ select:focus-visible {
 html[data-win] .titlebar-btn {
   right: 150px;
 }
+
+.password-prompt {
+  padding: 12px;
+}
+
+.password-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.password-row input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.password-row input:hover {
+  border-color: var(--signal-line);
+}
+
+.password-row input:focus {
+  border-color: var(--signal);
+}
+
+.password-row input::placeholder {
+  color: var(--faint);
+}
+
+.password-prompt .hint {
+  margin: 8px 0 0;
+}

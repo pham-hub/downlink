@@ -41,6 +41,11 @@ function runtimeArgs(denoPath) {
 
 const FETCH_TIMEOUT = 90 * 1000;
 
+// Passed as an argument array, never through a shell, and kept in memory only.
+function passwordArgs(password) {
+  return password ? ['--video-password', password] : [];
+}
+
 // An error carrying the raw tool output (for the error map) or a code of the app's own.
 function toolError(raw, code) {
   const err = new Error(String(raw || '').trim().split('\n').pop() || 'yt-dlp failed');
@@ -53,12 +58,12 @@ function toolError(raw, code) {
 // --flat-playlist makes playlist and channel links return a short list right away instead of
 // looking up every video in them, so they can be turned away quickly.
 // The promise has a cancel() so a link the user moved on from stops loading.
-function fetchInfo({ ytDlpPath, denoPath }, url) {
+function fetchInfo({ ytDlpPath, denoPath }, url, { password } = {}) {
   let child;
   const promise = new Promise((resolve, reject) => {
     child = execFile(
       ytDlpPath,
-      [...BASE_ARGS, ...runtimeArgs(denoPath), '--dump-single-json', '--flat-playlist', '--', url],
+      [...BASE_ARGS, ...runtimeArgs(denoPath), ...passwordArgs(password), '--dump-single-json', '--flat-playlist', '--', url],
       { maxBuffer: 1024 * 1024 * 50, timeout: FETCH_TIMEOUT, windowsHide: true },
       (err, stdout, stderr) => {
         if (err && err.killed) {
@@ -97,10 +102,11 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle, password }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
+    ...passwordArgs(password),
     '--newline',
     '--no-quiet',
     '--print', `after_move:${FILE_MARKER}%(filepath)s`,

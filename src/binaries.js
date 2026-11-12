@@ -69,7 +69,10 @@ function resolveTools() {
 
 function getPaths() {
   const tools = resolveTools();
-  return { ytDlpPath: tools.ytDlp.path, denoPath: tools.deno.path, ffmpegPath: tools.ffmpeg.path };
+  // Unpackaged runs can point at a stand-in yt-dlp to exercise flows (like passwords) that need
+  // a real account on a real site.
+  const ytDlpPath = !app.isPackaged && process.env.DOWNLINK_TEST_YTDLP ? process.env.DOWNLINK_TEST_YTDLP : tools.ytDlp.path;
+  return { ytDlpPath, denoPath: tools.deno.path, ffmpegPath: tools.ffmpeg.path };
 }
 
 function getVersions() {

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
 
   startDownload: (payload) => ipcRenderer.invoke('start-download', payload),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  submitPassword: (payload) => ipcRenderer.invoke('submit-password', payload),
   discardJob: (id) => ipcRenderer.invoke('discard-job', id),
   onJobUpdate: (cb) => ipcRenderer.on('job-update', (event, snapshot) => cb(snapshot)),
   getPresets: () => ipcRenderer.invoke('get-presets'),

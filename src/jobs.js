@@ -49,6 +49,7 @@ function snapshot(job) {
     thumbnail: job.thumbnail,
     needsPassword: job.status === 'awaiting_input' && job.needs === 'password',
     passwordTries: job.passwordTries || 0,
+    wrongPassword: !!job.wrongPassword,
     progress: job.progress,
     outputPath: job.outputPath,
     existing: !!job.existing,
@@ -97,6 +98,8 @@ class JobStore extends EventEmitter {
     }
     Object.assign(job, patch, { status });
     if (status === 'done' || status === 'failed') job.finishedAt = Date.now();
+    // The password lives on the job only while it's needed, and never anywhere else.
+    if (status === 'done') job.password = undefined;
     if (status === 'ready' || status === 'resolving') job.finishedAt = undefined;
     if (status !== 'downloading' && status !== 'processing') job.progress = undefined;
     if (status === 'done' || status === 'failed' || status === 'ready') this.cleanTemp(job);
@@ -137,6 +140,7 @@ class JobStore extends EventEmitter {
     if (!job) return;
     if (job.task && typeof job.task.cancel === 'function') job.task.cancel();
     this.cleanTemp(job);
+    job.password = undefined;
     this.current = null;
   }
 

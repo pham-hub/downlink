@@ -67,6 +67,16 @@
 
       <div id="preview-error" class="notice error hidden"></div>
 
+      <!-- Password -->
+      <form id="password-prompt" class="card password-prompt hidden" autocomplete="off">
+        <div class="password-row">
+          <input id="password-input" type="password" spellcheck="false" placeholder="Video password" aria-label="Video password" />
+          <button id="unlock-btn" type="submit" class="btn btn-secondary">Unlock</button>
+          <button id="password-cancel" type="button" class="btn btn-ghost">Cancel</button>
+        </div>
+        <p id="password-error" class="hint error-text hidden">That password didn't work</p>
+      </form>
+
       <!-- Options -->
       <div id="options" class="card options is-disabled">
         <div class="segmented" id="mode-control" role="radiogroup" aria-label="What to download">

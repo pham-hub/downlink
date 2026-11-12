@@ -83,6 +83,7 @@ const state = {
   formats: null,
   fetchedUrl: null,
   jobId: null,
+  passwordJob: null,
   downloading: false,
   cancelling: false,
   lastFile: null,
@@ -263,6 +264,10 @@ window.api.onToolsUpdated(renderToolVersions);
 
 function resetPreview() {
   if (state.jobId && !state.downloading) window.api.discardJob(state.jobId);
+  if (state.passwordJob) {
+    window.api.discardJob(state.passwordJob.id);
+    hidePasswordPrompt();
+  }
   state.jobId = null;
   state.info = null;
   state.formats = null;
@@ -310,23 +315,36 @@ urlForm.addEventListener('submit', async (event) => {
   preview.className = 'card preview is-loading';
   previewTitle.textContent = 'Loading video details';
   previewSub.textContent = 'Loading';
-  fetchBtn.disabled = true;
-  show(fetchBtn.querySelector('.spinner'), true);
-  show(fetchBtn.querySelector('.label'), false);
+  setFetching(true);
 
-  const result = await window.api.fetchInfo(url);
+  await settleFetch(window.api.fetchInfo(url), url);
+});
+
+function setFetching(on) {
+  fetchBtn.disabled = on;
+  show(fetchBtn.querySelector('.spinner'), on);
+  show(fetchBtn.querySelector('.label'), !on);
+}
+
+// Handles what came back for a link: a loaded video, a password to ask for, or an error.
+async function settleFetch(pending, url) {
+  const result = await pending;
   // A newer link replaced this one while it loaded.
   if (result.stale) return;
-
-  fetchBtn.disabled = false;
-  show(fetchBtn.querySelector('.spinner'), false);
-  show(fetchBtn.querySelector('.label'), true);
+  setFetching(false);
 
   // The link was edited while this one loaded; its result no longer applies.
   if (urlInput.value.trim() !== url) {
+    if (result.jobId) window.api.discardJob(result.jobId);
     resetPreview();
     return;
   }
+
+  if (result.needsPassword) {
+    showPasswordPrompt(result, url);
+    return;
+  }
+  hidePasswordPrompt();
 
   if (!result.success) {
     resetPreview();
@@ -344,6 +362,53 @@ urlForm.addEventListener('submit', async (event) => {
   renderOptions();
   refreshEstimate();
   downloadBtn.focus();
+}
+
+/* ---------- password ---------- */
+
+const passwordPrompt = $('password-prompt');
+const passwordInput = $('password-input');
+const passwordError = $('password-error');
+
+function showPasswordPrompt(result, url) {
+  // The same job is asking again after a wrong try; it must survive the reset.
+  state.passwordJob = null;
+  resetPreview();
+  state.passwordJob = { id: result.jobId, url };
+  preview.className = 'card preview';
+  previewTitle.textContent = 'This video needs a password';
+  previewSub.textContent = '';
+  passwordInput.value = '';
+  show(passwordError, !!result.wrongPassword);
+  show(passwordPrompt, true);
+  passwordInput.focus();
+}
+
+function hidePasswordPrompt() {
+  state.passwordJob = null;
+  show(passwordPrompt, false);
+  passwordInput.value = '';
+}
+
+passwordPrompt.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const pending = state.passwordJob;
+  const password = passwordInput.value;
+  if (!pending || !password) return;
+  passwordInput.value = '';
+  $('unlock-btn').disabled = true;
+  preview.className = 'card preview is-loading';
+  previewTitle.textContent = 'Loading video details';
+  previewSub.textContent = 'Loading';
+  const result = window.api.submitPassword({ jobId: pending.id, password });
+  await settleFetch(result, pending.url);
+  $('unlock-btn').disabled = false;
+});
+
+$('password-cancel').addEventListener('click', () => {
+  if (state.passwordJob) window.api.discardJob(state.passwordJob.id);
+  hidePasswordPrompt();
+  resetPreview();
 });
 
 // Dropping a link anywhere on the window (from a browser's address bar or a page) fetches it.
@@ -367,7 +432,9 @@ document.addEventListener('drop', (event) => {
 
 // Editing the link after fetching makes the preview stale.
 urlInput.addEventListener('input', () => {
-  if (state.fetchedUrl && urlInput.value.trim() !== state.fetchedUrl && !state.downloading) {
+  if (state.passwordJob && urlInput.value.trim() !== state.passwordJob.url) {
+    resetPreview();
+  } else if (state.fetchedUrl && urlInput.value.trim() !== state.fetchedUrl && !state.downloading) {
     resetPreview();
     show(resultCard, false);
   }

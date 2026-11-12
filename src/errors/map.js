@@ -26,7 +26,7 @@ const ERROR_TABLE = [
   },
   {
     code: 'WRONG_PASSWORD',
-    pattern: /wrong password|invalid password|incorrect password/i,
+    pattern: /wrong (video )?password|invalid (video )?password|incorrect (video )?password/i,
     message: "That password didn't work.",
     action: ACTIONS.tryAgain,
   },
@@ -140,8 +140,6 @@ const CODED = {
   WRONG_PASSWORD: { message: "That password didn't work.", action: ACTIONS.tryAgain },
   INVALID_URL: { message: 'Please enter a valid video URL.' },
   PERMISSION: { message: "Can't save to that folder. Choose a different one.", action: ACTIONS.showFolder },
-  // Vimeo is still turned away until the password prompt (spec section 2) lands.
-  VIMEO: { message: "Vimeo isn't supported because it requires signing in." },
   UNKNOWN: { message: 'Something went wrong.', action: ACTIONS.retry },
 };
 
