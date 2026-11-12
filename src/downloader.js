@@ -97,7 +97,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource, extraArgs, fixedTitle }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -172,7 +172,9 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode,
   // Leading dots ("...Baby One More Time") would make a file Finder hides. The file name drops them;
   // the title tag inside the file keeps them.
   args.push('--parse-metadata', '%(title)s:%(filetitle)s', '--replace-in-metadata', 'filetitle', '^[\\s.]+', '');
-  args.push('-o', `%(filetitle).170B${suffix}${clipSuffix}.%(ext)s`, '--', url);
+  // A stream found by capture has no title of its own (its file is "master.m3u8"); use the page's.
+  const titlePart = fixedTitle ? fixedTitle.replace(/%/g, '%%') : '%(filetitle).170B';
+  args.push(...(extraArgs || []), '-o', `${titlePart}${suffix}${clipSuffix}.%(ext)s`, '--', url);
   return args;
 }
 

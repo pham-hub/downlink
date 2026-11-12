@@ -123,4 +123,40 @@ function summarizeFormats(info) {
   };
 }
 
-module.exports = { summarizeFormats, normalizeCodec, toFormatOption, needsCompatibilityBadge };
+// Variants found by stream capture (an HLS master's list or Frame.io's renditions) become the
+// same summary the picker already reads for yt-dlp links.
+function summarizeVariants(variants, durationSec) {
+  const options = variants
+    .map((v) => {
+      const estBytes = v.estBytes || (v.bandwidth && durationSec ? Math.round((v.bandwidth * durationSec) / 8) : undefined);
+      const label = [
+        v.height ? `${tierOf({ width: v.width, height: v.height })}p` : null,
+        CODEC_NAMES[v.vcodec] || null,
+        v.fps ? formatFps(v.fps) : null,
+        estBytes ? `~${formatMegabytes(estBytes)}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return { id: v.id, height: v.height, width: v.width, fps: v.fps, vcodec: v.vcodec, hdr: !!v.hdr, hasAudio: !!v.hasAudio, estBytes, label: label || v.label };
+    })
+    .sort((a, b) => b.height - a.height);
+  const qualities = new Map();
+  options.forEach((o) => {
+    if (!o.height) return;
+    const tier = tierOf({ width: o.width, height: o.height });
+    const q = qualities.get(tier) || { tier, res: 0, label: tierLabel(tier), h264: false };
+    q.res = Math.max(q.res, o.height);
+    if (o.vcodec === 'h264') q.h264 = true;
+    qualities.set(tier, q);
+  });
+  return {
+    qualities: [...qualities.values()].sort((a, b) => b.tier - a.tier),
+    options,
+    bestNeedsBadge: options.some(needsCompatibilityBadge),
+    hasVideo: true,
+    hasVideoOnly: false,
+    hasAudio: true,
+  };
+}
+
+module.exports = { summarizeVariants, summarizeFormats, normalizeCodec, toFormatOption, needsCompatibilityBadge };

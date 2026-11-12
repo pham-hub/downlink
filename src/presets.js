@@ -180,8 +180,16 @@ function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output, s
   ];
 }
 
+// Audio from a sniffed file: MP3 is encoded, M4A and "original" keep the AAC as it is.
+function buildAudioExtractArgs({ format, input, output }) {
+  const base = ['-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats', '-i', input, '-vn', '-map', '0:a:0'];
+  if (format === 'mp3') return [...base, '-c:a', 'libmp3lame', '-q:a', '0', output];
+  return [...base, '-c:a', 'copy', output];
+}
+
 module.exports = {
   PRESETS,
+  buildAudioExtractArgs,
   isPresetId,
   detectEncoders,
   chooseEncoders,

@@ -6,7 +6,7 @@ function getJson(url) {
 }
 async function connect(port = 9333) {
   const targets = await getJson(`http://127.0.0.1:${port}/json`);
-  const page = targets.find((t) => t.type === 'page');
+  const page = targets.find((t) => t.type === 'page' && /renderer\/index\.html/.test(t.url));
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   let id = 0; const pending = new Map();

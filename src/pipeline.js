@@ -5,6 +5,10 @@
 // downloads the best-quality source into the job's temp folder, then ffmpeg makes the final
 // file in the chosen folder (spec section 5). The intermediate source is deleted afterwards
 // unless "Keep original too" is on.
+//
+// A job from stream capture can bring its own first step (options.sourceStarter, an ffmpeg
+// download of separate video and audio playlists). Its file is always finished in a second
+// step: converted by the preset, cut down to audio or video only, or simply moved.
 
 const fs = require('fs');
 const path = require('path');
@@ -25,8 +29,9 @@ function startJob(options, hooks) {
   const preset = presets.PRESETS[options.preset] || presets.PRESETS.original;
   // The v1.0 audio modes (MP3, M4A) and "Audio only (original)" are all handled by yt-dlp.
   const converts = preset.convert && options.mode !== 'video';
+  const staged = converts || !!options.sourceStarter;
 
-  if (!converts) {
+  if (!staged) {
     return startDownload(options, {
       onProgress: hooks.onProgress,
       onComplete: hooks.onComplete,
@@ -47,55 +52,89 @@ function startJob(options, hooks) {
     hooks.onCancel();
   }
 
-  current = startDownload(
-    {
-      ...options,
-      folder: sourceDir,
-      intermediate: true,
-      audioOnlySource: !!preset.audioOnly,
-      // Presets that re-encode want the best source; the picker's compatible/tier choices only
-      // narrow what's downloaded when the user asks for a specific height or format.
-      videoCodec: 'best',
+  const stageHooks = {
+    onProgress: hooks.onProgress,
+    onError: (raw, source) => hooks.onError(raw, source || 'ytdlp'),
+    onCancel: finishCancelled,
+    onComplete: async (result) => {
+      if (cancelled) return finishCancelled();
+      if (!result.filePath) return hooks.onError('No file was reported', 'ytdlp');
+      try {
+        await finish(result.filePath);
+      } catch (err) {
+        hooks.onError(err.message, 'ffmpeg');
+      }
     },
-    {
-      onProgress: hooks.onProgress,
-      onError: (raw) => hooks.onError(raw, 'ytdlp'),
-      onCancel: finishCancelled,
-      onComplete: async (result) => {
-        if (cancelled) return finishCancelled();
-        if (!result.filePath) return hooks.onError('yt-dlp did not report a file', 'ytdlp');
-        try {
-          await convert(result.filePath);
-        } catch (err) {
-          hooks.onError(err.message, 'ffmpeg');
-        }
-      },
-    }
-  );
+  };
 
-  async function convert(sourceFile) {
-    hooks.onProgress({ stage: 'processing', step: 'Convert', percent: 0 });
+  if (options.sourceStarter) {
+    current = options.sourceStarter({ ...options, folder: sourceDir }, stageHooks);
+  } else {
+    current = startDownload(
+      {
+        ...options,
+        folder: sourceDir,
+        intermediate: true,
+        audioOnlySource: !!preset.audioOnly,
+        // Presets that re-encode want the best source, whatever the picker's codec choice.
+        videoCodec: 'best',
+      },
+      stageHooks
+    );
+  }
+
+  // Second step: the preset, an audio or video-only cut, or just moving the file into place.
+  async function finish(sourceFile) {
     const probeInfo = await presets.probe(options.ffmpegPath, sourceFile);
-    // "Title (720p)_000005-000010" -> "Title (720p) (H.264)_000005-000010": the preset goes before
-    // the clip range, which stays last.
-    const tag = PRESET_TAGS[options.preset];
     const raw = path.basename(sourceFile, path.extname(sourceFile));
+    // "Title (720p)_000005-000010" -> "Title (720p) (H.264)_000005-000010": the preset goes
+    // before the clip range, which stays last.
     const parts = raw.match(/^(.*?)(_\d{6}-(?:\d{6}|end))?$/);
+    const tag = converts ? PRESET_TAGS[options.preset] : null;
     const base = tag ? `${parts[1]} (${tag})${parts[2] || ''}` : raw;
-    const output = uniquePath(options.folder, base, preset.ext);
+
+    let ext;
+    let args = null;
+    if (converts) {
+      ext = preset.ext;
+      args = (output) =>
+        presets.buildConvertArgs({
+          presetId: options.preset,
+          encoders: options.encoders,
+          probeInfo,
+          input: sourceFile,
+          output,
+          stillSec: options.stillSec,
+        });
+    } else if (options.mode === 'audio') {
+      ext = options.audioFormat === 'mp3' ? 'mp3' : 'm4a';
+      args = (output) => presets.buildAudioExtractArgs({ format: options.audioFormat, input: sourceFile, output });
+    } else if (options.mode === 'video') {
+      ext = 'mp4';
+      args = (output) => [
+        '-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats',
+        '-i', sourceFile, '-an', '-map', '0:v:0', '-c', 'copy', '-movflags', '+faststart', output,
+      ];
+    }
+
+    if (!args) {
+      // Nothing to convert: the downloaded file is the result.
+      const output = uniquePath(options.folder, base, path.extname(sourceFile).slice(1));
+      try {
+        fs.renameSync(sourceFile, output);
+      } catch {
+        fs.copyFileSync(sourceFile, output); // a different volume
+      }
+      return hooks.onComplete({ filePath: output, existing: false });
+    }
+
+    hooks.onProgress({ stage: 'processing', step: 'Convert', percent: 0 });
+    const output = uniquePath(options.folder, base, ext);
     partialOutput = output;
-    const args = presets.buildConvertArgs({
-      presetId: options.preset,
-      encoders: options.encoders,
-      probeInfo,
-      input: sourceFile,
-      output,
-      stillSec: options.stillSec,
-    });
     if (cancelled) return finishCancelled();
     const run = runFfmpeg({
       ffmpegPath: options.ffmpegPath,
-      args,
+      args: args(output),
       durationSec: preset.still ? 0 : probeInfo.durationSec,
       onProgress: (percent) => hooks.onProgress({ stage: 'processing', step: 'Convert', percent }),
     });
@@ -107,7 +146,7 @@ function startJob(options, hooks) {
       throw new Error(stderr || `ffmpeg exited with code ${code}`);
     }
     partialOutput = null;
-    if (options.keepOriginal) {
+    if (options.keepOriginal && converts) {
       const kept = uniquePath(options.folder, base, path.extname(sourceFile).slice(1));
       fs.copyFileSync(sourceFile, kept);
     }

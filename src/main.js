@@ -7,7 +7,9 @@ const settings = require('./settings');
 const { fetchInfo } = require('./downloader');
 const { startJob } = require('./pipeline');
 const presets = require('./presets');
-const { summarizeFormats } = require('./formats');
+const { summarizeFormats, summarizeVariants } = require('./formats');
+const { sniff } = require('./sniff');
+const { startSniffSource, safeName } = require('./sniff/source');
 const { JobStore } = require('./jobs');
 const { friendlyError, errorFromCode } = require('./errors/map');
 
@@ -268,11 +270,111 @@ ipcMain.handle('fetch-info', async (event, url) => {
     };
   } catch (err) {
     if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    // yt-dlp can't read the page: let the site's own player show us the stream instead.
+    if (/Unsupported URL|No video formats found/i.test((err && err.raw) || '') && settings.getSettings().sniffFallback) {
+      return captureStream(job);
+    }
     const error = toFriendly(job, err);
     jobs.fail(job, error);
     return { success: false, jobId: job.id, error };
   }
 });
+
+// Stream capture fallback (spec section 1): a hidden window loads the page and notes the stream.
+async function captureStream(job) {
+  jobs.update(job, { resolver: 'sniff' });
+  try {
+    const task = sniff(job.sourceUrl, { jobId: job.id });
+    job.task = task;
+    const result = await task;
+    if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    const host = new URL(job.sourceUrl).hostname.replace(/^www\./, '');
+    const summary = result.variants
+      ? summarizeVariants(result.variants, result.durationSec)
+      : { qualities: [], options: [], bestNeedsBadge: false, hasVideo: true, hasVideoOnly: false, hasAudio: true };
+    const title = (result.pageTitle || '').trim() || host;
+    jobs.transition(job, 'ready', {
+      title,
+      durationSec: result.durationSec,
+      fps: bestFps(summary),
+      formats: summary.options,
+      sniff: result,
+      task: undefined,
+    });
+    return {
+      success: true,
+      jobId: job.id,
+      info: { title, uploader: null, duration: result.durationSec || null, fps: bestFps(summary), thumbnail: result.posterUrl || null, site: host },
+      formats: summary,
+    };
+  } catch (err) {
+    if (jobs.get(job.id) !== job || (err && err.code === 'CANCELLED')) return { success: false, stale: true };
+    const error = toFriendly(job, err);
+    jobs.fail(job, error);
+    return { success: false, jobId: job.id, error };
+  }
+}
+
+// Which captured rendition the picker's choice means.
+function pickVariant(variants, quality) {
+  if (!variants || !variants.length) return null;
+  const sorted = [...variants].sort((a, b) => b.height - a.height);
+  const q = quality || {};
+  if (q.kind === 'format') return sorted.find((v) => v.id === q.formatId) || sorted[0];
+  if (q.kind === 'tier' && Number.isInteger(q.resolution)) {
+    return sorted.find((v) => v.height <= q.resolution) || sorted[sorted.length - 1];
+  }
+  return sorted[0];
+}
+
+function headerArgs(h) {
+  const args = [];
+  if (h.referer) args.push('--add-header', `Referer:${h.referer}`);
+  if (h.origin) args.push('--add-header', `Origin:${h.origin}`);
+  if (h.userAgent) args.push('--user-agent', h.userAgent);
+  if (h.cookie) args.push('--add-header', `Cookie:${h.cookie}`);
+  return args;
+}
+
+// What differs for a captured stream: where the file comes from and how it's named.
+function sniffOptions(job, request, payload, paths) {
+  const sn = job.sniff;
+  const variant = pickVariant(sn.variants, payload.quality);
+  const q = payload.quality || {};
+  const tag = variant && q.kind === 'tier' ? `${variant.height}p` : variant && q.kind === 'format' ? `${variant.height}p, H.264` : '';
+  if (sn.audio) {
+    // Separate video and audio playlists: ffmpeg downloads and joins them.
+    return {
+      sourceStarter: (opts, hooks) =>
+        startSniffSource(
+          {
+            sniff: sn,
+            videoUrl: variant ? variant.url : sn.video.url,
+            folder: opts.folder,
+            title: job.title,
+            tag,
+            clip: request.clip,
+            accurate: request.accurate,
+            durationSec: job.durationSec,
+            ffmpegPath: paths.ffmpegPath,
+            encoders,
+          },
+          hooks
+        ),
+    };
+  }
+  // One URL (master playlist, manifest or file): yt-dlp downloads it with the page's headers.
+  const top = variant && sn.variants ? [...sn.variants].sort((a, b) => b.height - a.height)[0] : null;
+  return {
+    url: sn.video.url,
+    extraArgs: headerArgs(sn.headers || {}),
+    fixedTitle: safeName(job.title),
+    formatId: undefined,
+    videoCodec: 'best',
+    resolution: variant && top && variant.height < top.height ? variant.height : null,
+    qualityLabel: variant && top && variant.height < top.height ? `${variant.height}p` : undefined,
+  };
+}
 
 // The link was edited or cleared: whatever was loaded for it no longer applies.
 ipcMain.handle('discard-job', (event, id) => {
@@ -377,6 +479,7 @@ ipcMain.handle('start-download', async (event, payload) => {
         tempDir: jobs.tempDir(job),
         mode: payload.mode,
         ...resolveQuality(job, payload.quality),
+        ...(job.resolver === 'sniff' ? sniffOptions(job, request, payload, binaries.getPaths()) : {}),
         audioFormat: request.audioFormat,
         clip: request.clip,
         duration: job.durationSec,

@@ -157,7 +157,7 @@ function redact(text) {
     .replace(/(--video-password(?:=|\s+))("[^"]*"|'[^']*'|\S+)/gi, '$1[hidden]')
     .replace(/(\/token\/)[^/\s"']+/g, '$1[token]')
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[token]')
-    .replace(/((?:^|[\r\n])\s*(?:Cookie|Authorization)\s*:\s*)[^\r\n]*/gi, '$1[hidden]');
+    .replace(/((?:Cookie|Authorization)\s*:\s*)[^\r\n"']*/gi, '$1[hidden]');
 }
 
 function resolveField(value, ctx) {

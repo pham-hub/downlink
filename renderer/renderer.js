@@ -207,6 +207,7 @@ function openSettings() {
   });
   set.value = state.settings.defaultPreset || 'original';
   $('set-keep').checked = !!state.settings.keepOriginal;
+  $('set-sniff').checked = state.settings.sniffFallback !== false;
   show(mainScreen, false);
   show(settingsScreen, true);
 }
@@ -219,6 +220,7 @@ function closeSettings() {
 $('settings-btn').addEventListener('click', () => (settingsScreen.classList.contains('hidden') ? openSettings() : closeSettings()));
 $('settings-done').addEventListener('click', closeSettings);
 $('set-preset').addEventListener('change', (e) => saveSetting('defaultPreset', e.target.value));
+$('set-sniff').addEventListener('change', (e) => saveSetting('sniffFallback', e.target.checked));
 $('set-keep').addEventListener('change', (e) => saveSetting('keepOriginal', e.target.checked));
 
 /* ---------- window sizing ---------- */
@@ -783,6 +785,7 @@ function showProgress(p) {
 
 // The main process moves the job through its stages; the window just follows along.
 window.api.onJobUpdate((job) => {
+  if (job.status === 'resolving' && job.resolver === 'sniff' && fetchBtn.disabled) previewSub.textContent = 'Using stream capture…';
   if (job.id !== state.jobId) return;
   if (job.status === 'downloading' || job.status === 'processing') {
     if (state.cancelling) return;
