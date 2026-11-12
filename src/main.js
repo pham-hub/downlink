@@ -246,7 +246,7 @@ const MAX_PASSWORD_TRIES = 3;
 // `awaiting_input`; a page yt-dlp can't read goes on to stream capture.
 async function resolveJob(job) {
   try {
-    const task = fetchInfo(binaries.getPaths(), job.sourceUrl, { password: job.password });
+    const task = fetchInfo(binaries.getPaths(), job.fetchUrl || job.sourceUrl, { password: job.password });
     job.task = task;
     const info = await task;
     // The user moved on to another link while this one loaded.
@@ -278,6 +278,13 @@ async function resolveJob(job) {
     };
   } catch (err) {
     if (jobs.get(job.id) !== job) return { success: false, stale: true };
+    // Some Vimeo videos only open from the web page when logged in, but their embed player
+    // takes the video password: try that address once.
+    const vimeoId = !job.fetchUrl && /\[vimeo\].*only works when logged-in/i.test((err && err.raw) || '') && job.sourceUrl.match(/vimeo\.com\/(?:[^?#]*\/)?(\d{6,})/);
+    if (vimeoId) {
+      job.fetchUrl = `https://player.vimeo.com/video/${vimeoId[1]}`;
+      return resolveJob(job);
+    }
     const error = toFriendly(job, err);
     if (error.code === 'PASSWORD' || error.code === 'WRONG_PASSWORD') return askForPassword(job, error);
     // yt-dlp can't read the page: let the site's own player show us the stream instead.
@@ -610,7 +617,7 @@ ipcMain.handle('start-download', async (event, payload) => {
     activeDownload = startJob(
       {
         ...binaries.getPaths(),
-        url: job.sourceUrl,
+        url: job.fetchUrl || job.sourceUrl,
         folder: payload.folder,
         tempDir: jobs.tempDir(job),
         password: job.password,
