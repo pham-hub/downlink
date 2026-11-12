@@ -12,33 +12,33 @@
 :root {
   color-scheme: dark;
 
-  --bg: #04080c;
-  --surface: #091017;
-  --surface-2: #0d161e;
-  --inset: #060b10;
-  --border: rgba(220, 236, 240, 0.08);
-  --border-strong: rgba(220, 236, 240, 0.12);
+  --bg: #111215;
+  --surface: #1e2024;
+  --surface-2: #18191d;
+  --inset: #18191d;
+  --border: #323439;
+  --border-strong: #47494e;
   /* Cards: a solid fill with a 1px edge that fades from sea foam at the top. */
-  --card-fill: linear-gradient(180deg, #0b131b, #091017);
-  --card-edge: linear-gradient(180deg, rgba(94, 230, 192, 0.2), rgba(220, 236, 240, 0.06) 40%);
+  --card-fill: #1e2024;
+  --card-edge: linear-gradient(180deg, rgba(94, 230, 192, 0.28), rgba(212, 215, 223, 0.06) 40%);
 
-  --text: #eef4f6;
-  --muted: #9aa6af;
-  --faint: #8a96a0;
+  --text: #d4d7df;
+  --muted: #abaeb5;
+  --faint: #83858c;
 
   --blue: #2f7be0;
   --teal: #22b6c9;
   --seafoam: #5ee6c0;
   --brand-gradient: linear-gradient(90deg, var(--blue), var(--teal), var(--seafoam));
-  --select: #e6eef2;
-  --signal: #ff8a3d;
-  --signal-soft: rgba(255, 138, 61, 0.08);
-  --signal-line: rgba(255, 138, 61, 0.55);
-  --danger: #f2545b;
-  --danger-text: #ffb3b6;
+  --select: #f5e0dc;
+  --signal: #f5e0dc;
+  --signal-soft: rgba(245, 224, 220, 0.08);
+  --signal-line: rgba(245, 224, 220, 0.5);
+  --danger: #f38ba8;
+  --danger-text: #f38ba8;
 
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
   --font-body: system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
   --font-brand: 'JetBrains Mono', ui-monospace, monospace;
@@ -60,8 +60,8 @@ body {
 
 body {
   background:
-    radial-gradient(75% 46% at 50% -8%, rgba(47, 123, 224, 0.36), transparent 70%),
-    radial-gradient(40% 30% at 90% -4%, rgba(94, 230, 192, 0.18), transparent 70%),
+    radial-gradient(75% 46% at 50% -8%, rgba(47, 123, 224, 0.30), transparent 70%),
+    radial-gradient(40% 30% at 90% -4%, rgba(94, 230, 192, 0.14), transparent 70%),
     var(--bg);
   font-family: var(--font-body);
   font-size: 13px;
@@ -188,7 +188,7 @@ p {
   font-size: 14px;
   color: #fff;
   background: linear-gradient(90deg, var(--blue), #1fa3c6);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow: none;
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -562,7 +562,7 @@ select:focus-visible {
 }
 
 .switch:checked {
-  background: var(--blue);
+  background: linear-gradient(90deg, var(--blue), var(--teal));
   box-shadow: none;
 }
 
@@ -706,7 +706,7 @@ select:focus-visible {
   width: 0%;
   border-radius: 3px;
   background: var(--brand-gradient);
-  box-shadow: 0 0 14px rgba(94, 230, 192, 0.55);
+  box-shadow: none;
   transition: width 0.25s ease;
 }
 
