@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('api', {
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   discardJob: (id) => ipcRenderer.invoke('discard-job', id),
   onJobUpdate: (cb) => ipcRenderer.on('job-update', (event, snapshot) => cb(snapshot)),
+  getPresets: () => ipcRenderer.invoke('get-presets'),
+  estimateOutput: (args) => ipcRenderer.invoke('estimate-output', args),
   openFolder: () => ipcRenderer.invoke('open-folder'),
 
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),

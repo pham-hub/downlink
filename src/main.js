@@ -4,7 +4,9 @@ const fs = require('fs');
 
 const binaries = require('./binaries');
 const settings = require('./settings');
-const { fetchInfo, startDownload } = require('./downloader');
+const { fetchInfo } = require('./downloader');
+const { startJob } = require('./pipeline');
+const presets = require('./presets');
 const { summarizeFormats } = require('./formats');
 const { JobStore } = require('./jobs');
 const { friendlyError, errorFromCode } = require('./errors/map');
@@ -96,6 +98,7 @@ app.whenReady().then(() => {
   if (app.dock && !app.isPackaged && fs.existsSync(devIcon)) app.dock.setIcon(devIcon);
   binaries.removeStaleCopies();
   jobs.sweepTemp();
+  loadEncoders();
   createWindow();
   setTimeout(updateTools, 5000);
   setInterval(updateTools, UPDATE_CHECK_INTERVAL);
@@ -103,6 +106,16 @@ app.whenReady().then(() => {
 
 // A single-window utility: closing the window quits, so a download is never left running unseen.
 app.on('window-all-closed', () => app.quit());
+
+// ffmpeg's encoder list is read once at startup; presets this machine can't make are hidden.
+let encoders = { h264: null, prores: null };
+async function loadEncoders() {
+  try {
+    encoders = presets.chooseEncoders(await presets.detectEncoders(binaries.getPaths().ffmpegPath));
+  } catch {
+    // tools missing; the first download reports it
+  }
+}
 
 function send(channel, data) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data);
@@ -133,6 +146,39 @@ function isVimeo(url) {
     return /(^|\.)vimeo\.com$/i.test(new URL(url.trim()).hostname);
   } catch {
     return false;
+  }
+}
+
+ipcMain.handle('get-presets', async () => {
+  await loadEncodersOnce();
+  return presets.availablePresets(encoders).map((id) => ({ id, label: presets.PRESETS[id].label, large: !!presets.PRESETS[id].large }));
+});
+
+let encodersReady = null;
+function loadEncodersOnce() {
+  if (!encodersReady) encodersReady = loadEncoders();
+  return encodersReady;
+}
+
+// How big a ProRes file will get, and whether there's room for it.
+ipcMain.handle('estimate-output', (event, { jobId, preset, height, clipSeconds }) => {
+  const job = jobs.get(jobId);
+  if (!job) return null;
+  const top = (job.formats || [])[0] || {};
+  const h = Number.isInteger(height) ? height : top.height;
+  const w = Number.isInteger(height) ? Math.round((height * 16) / 9) : top.width || Math.round(((top.height || 1080) * 16) / 9);
+  const bytes = presets.estimateBytes(preset, {
+    width: w, height: h || 1080, fps: job.fps || 30, durationSec: clipSeconds || job.durationSec,
+  });
+  return { bytes, freeBytes: freeSpace(settings.getSettings().lastFolder) };
+});
+
+function freeSpace(folder) {
+  try {
+    const stat = fs.statfsSync(folder);
+    return stat.bavail * stat.bsize;
+  } catch {
+    return null;
   }
 }
 
@@ -214,6 +260,7 @@ ipcMain.handle('fetch-info', async (event, url) => {
         title: info.title,
         uploader: info.uploader || info.channel || info.creator || null,
         duration: info.duration || null,
+        fps: bestFps(formats),
         thumbnail: info.thumbnail || null,
         site: info.extractor_key || null,
       },
@@ -274,6 +321,33 @@ function notifyComplete(filePath) {
   notification.show();
 }
 
+// Picks the preset and clip for a job from what the window sent, ignoring anything invalid.
+// The v1.0 audio-only mode maps onto the spec's audio presets: WAV and "original".
+function resolveOutput(job, payload) {
+  const available = new Set(presets.availablePresets(encoders));
+  let preset = presets.isPresetId(payload.preset) && available.has(payload.preset) ? payload.preset : 'original';
+  let audioFormat = payload.audioFormat;
+  if (payload.mode === 'audio') preset = audioFormat === 'wav' ? 'wav' : audioFormat === 'original' ? 'audio-original' : 'original';
+  else if (payload.mode === 'video') preset = 'original';
+  const still = preset === 'still';
+  const clip = still ? null : validClip(payload.clip);
+  const stillSec = still ? Number(payload.stillSec) || 0 : undefined;
+  return { preset, audioFormat, clip, accurate: !!(payload.accurate && clip), stillSec };
+}
+
+// Blocks ProRes jobs that wouldn't fit on the disk (free space under 1.2x the estimate).
+function checkRoom(job, request, payload) {
+  const estimate = presets.estimateBytes(request.preset, {
+    width: (job.formats && job.formats[0] && job.formats[0].width) || 1920,
+    height: (job.formats && job.formats[0] && job.formats[0].height) || 1080,
+    fps: job.fps || 30,
+    durationSec: request.clip ? (request.clip.end == null ? job.durationSec : request.clip.end) - request.clip.start : job.durationSec,
+  });
+  const free = freeSpace(payload.folder);
+  if (estimate && free != null && free < estimate * 1.2) return errorFromCode('DISK_FULL', `Needs about ${estimate} bytes, ${free} free.`);
+  return null;
+}
+
 ipcMain.handle('start-download', async (event, payload) => {
   if (activeDownload) return { started: false, error: errorFromCode('UNKNOWN', 'A download is already running.') };
   const job = jobs.get(payload && payload.jobId);
@@ -285,8 +359,17 @@ ipcMain.handle('start-download', async (event, payload) => {
     // A failed download is retried from the same job; its options are still in place.
     if (job.status === 'failed') jobs.transition(job, 'ready', { error: undefined });
     if (job.status !== 'ready') return { started: false, error: errorFromCode('UNKNOWN', `Job is ${job.status}.`) };
-    jobs.transition(job, 'downloading', { error: undefined, cancelled: false, progress: { percent: 0 } });
-    activeDownload = startDownload(
+    await loadEncodersOnce();
+    const request = resolveOutput(job, payload);
+    const blocked = checkRoom(job, request, payload);
+    if (blocked) {
+      jobs.fail(job, blocked);
+      return { started: false };
+    }
+    jobs.transition(job, 'downloading', {
+      error: undefined, cancelled: false, progress: { percent: 0 }, preset: request.preset, clip: request.clip || undefined,
+    });
+    activeDownload = startJob(
       {
         ...binaries.getPaths(),
         url: job.sourceUrl,
@@ -294,9 +377,14 @@ ipcMain.handle('start-download', async (event, payload) => {
         tempDir: jobs.tempDir(job),
         mode: payload.mode,
         ...resolveQuality(job, payload.quality),
-        audioFormat: payload.audioFormat,
-        clip: validClip(payload.clip),
+        audioFormat: request.audioFormat,
+        clip: request.clip,
         duration: job.durationSec,
+        preset: request.preset,
+        encoders,
+        stillSec: request.stillSec,
+        accurate: request.accurate,
+        keepOriginal: settings.getSettings().keepOriginal,
       },
       {
         onProgress: (progress) => {
@@ -315,10 +403,10 @@ ipcMain.handle('start-download', async (event, payload) => {
           jobs.transition(job, 'done', { outputPath: result.filePath || undefined, existing: !!result.existing });
           notifyComplete(result.filePath);
         },
-        onError: (raw) => {
+        onError: (raw, source) => {
           activeDownload = null;
           clearTaskbar(false);
-          jobs.fail(job, toFriendly(job, { raw }));
+          jobs.fail(job, toFriendly(job, { raw }, source));
         },
         onCancel: () => {
           activeDownload = null;

@@ -1,6 +1,7 @@
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const Timecode = require('../renderer/timecode');
 
 // --ignore-config keeps a personal ~/.config/yt-dlp/config (custom -o, -f, -k, ...)
 // from changing what the app downloads or where it saves.
@@ -15,6 +16,8 @@ const AUDIO_FORMATS = {
   m4a: { selector: 'ba[ext=m4a]/ba/b', extra: [], coverArt: true },
   // WAV has no standard place for cover art.
   wav: { selector: 'ba/b', extra: [], coverArt: false },
+  // Keeps whatever the site serves (m4a, opus...) without re-encoding.
+  original: { selector: 'ba/b', extra: [], coverArt: false, keep: true },
 };
 
 // Sort order per codec preference. 'best' ranks codecs the way yt-dlp does by default (AV1 > VP9 >
@@ -94,7 +97,7 @@ function compactTime(seconds) {
   return `${s % 60}s`;
 }
 
-function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip }) {
+function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, duration, mode, resolution, qualityLabel, audioFormat, videoCodec, formatId, formatHasAudio, formatTag, clip, accurate, intermediate, audioOnlySource }) {
   const args = [
     ...BASE_ARGS,
     ...runtimeArgs(denoPath),
@@ -118,13 +121,18 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolutio
   // Best compatible (H.264) is the default and carries no tag.
   if (mode !== 'audio' && formatId) tags.push(formatTag || `format ${formatId}`);
   else if (mode !== 'audio' && resolution && /^\d{3,4}p$/.test(qualityLabel || '')) tags.push(qualityLabel);
-  else if (mode !== 'audio' && videoCodec === 'best') tags.push('best quality');
+  else if (mode !== 'audio' && videoCodec === 'best' && !intermediate) tags.push('best quality');
 
   if (mode === 'audio') {
     const fmt = AUDIO_FORMATS[audioFormat] ? audioFormat : 'mp3';
     const spec = AUDIO_FORMATS[fmt];
-    args.push('-f', spec.selector, '-x', '--audio-format', fmt, ...spec.extra);
+    args.push('-f', spec.selector, '-x', '--audio-format', spec.keep ? 'best' : fmt, ...spec.extra);
     if (spec.coverArt) args.push('--embed-thumbnail');
+  } else if (intermediate) {
+    // First half of a converting preset: the best-quality source goes to the job's temp folder
+    // untouched, and ffmpeg makes the final file from it.
+    if (audioOnlySource) args.push('-f', 'ba/b');
+    else args.push('-f', 'bv*+ba/b', '-S', 'res,fps,hdr:12,vcodec,acodec', '--merge-output-format', 'mkv');
   } else if (mode === 'video') {
     args.push('-f', formatId || 'bv', '-S', sort, '--remux-video', 'mp4', '--embed-thumbnail');
     tags.push('video only');
@@ -141,16 +149,21 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolutio
     );
   }
 
+  let clipSuffix = '';
   if (clip) {
     const start = clip.start || 0;
-    const end = clip.end == null ? 'inf' : clip.end;
-    // Cut on the exact times rather than the nearest keyframe/seek point (audio snaps too).
-    args.push('--download-sections', `*${start}-${end}`, '--force-keyframes-at-cuts');
-    // Exact cuts make ffmpeg re-encode the clip, and its defaults (x264 CRF 23, Opus at 96 kbps)
-    // are visibly and audibly worse than the source. Encode close to it instead.
-    const reencode = { audio: '-b:a 256k', video: '-crf 18' }[mode] || '-crf 18 -b:a 256k';
-    args.push('--downloader-args', `ffmpeg_o:${reencode}`);
-    tags.push(`clip ${compactTime(start)}-${clip.end == null ? 'end' : compactTime(clip.end)}`);
+    const end = clip.end == null ? 'inf' : Timecode.seconds3(clip.end);
+    args.push('--download-sections', `*${Timecode.seconds3(start)}-${end}`);
+    // Fast cut (default) snaps to the nearest keyframe and may start a few seconds early.
+    // Accurate cut re-encodes around the cuts, and yt-dlp's ffmpeg defaults (x264 CRF 23, Opus
+    // at 96 kbps) are visibly worse than the source, so encode close to it instead.
+    if (accurate) {
+      args.push('--force-keyframes-at-cuts');
+      const reencode = { audio: '-b:a 256k', video: '-crf 18' }[mode] || '-crf 18 -b:a 256k';
+      args.push('--downloader-args', `ffmpeg_o:${reencode}`);
+    }
+    const stop = clip.end == null ? duration : clip.end;
+    clipSuffix = `_${Timecode.compact(start)}-${stop != null ? Timecode.compact(stop) : 'end'}`;
   }
 
   // macOS allows 255 bytes per file name. Cap the title in bytes (long non-English titles use 3+
@@ -159,7 +172,7 @@ function buildArgs({ ffmpegPath, denoPath, url, folder, tempDir, mode, resolutio
   // Leading dots ("...Baby One More Time") would make a file Finder hides. The file name drops them;
   // the title tag inside the file keeps them.
   args.push('--parse-metadata', '%(title)s:%(filetitle)s', '--replace-in-metadata', 'filetitle', '^[\\s.]+', '');
-  args.push('-o', `%(filetitle).170B${suffix}.%(ext)s`, '--', url);
+  args.push('-o', `%(filetitle).170B${suffix}${clipSuffix}.%(ext)s`, '--', url);
   return args;
 }
 

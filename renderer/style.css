@@ -112,6 +112,7 @@ p {
 /* ---------- Title bar ---------- */
 
 .titlebar {
+  position: relative;
   height: 50px;
   display: flex;
   align-items: center;
@@ -847,4 +848,54 @@ select:focus-visible {
 
 .advanced-wrap .select-wrap {
   align-self: stretch;
+}
+
+.clip-more {
+  margin-top: 8px;
+}
+
+.clip-more .hint {
+  margin: 4px 0 0;
+}
+
+.titlebar-btn {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn:hover {
+  color: var(--signal);
+}
+
+.titlebar-btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.titlebar-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+html[data-win] .titlebar-btn {
+  right: 150px;
 }

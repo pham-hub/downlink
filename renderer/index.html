@@ -13,7 +13,28 @@
       <img class="brand-logo" src="assets/pnr-mark.svg" alt="PNR Digital" />
       <span class="brand-divider" aria-hidden="true"></span>
       <span class="brand-app">Downlink</span>
+      <button id="settings-btn" class="titlebar-btn" type="button" aria-label="Settings" title="Settings">
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h8M15 5.5h2M3 10h2M9 10h8M3 14.5h8M15 14.5h2" /><circle cx="13" cy="5.5" r="1.8" /><circle cx="7" cy="10" r="1.8" /><circle cx="13" cy="14.5" r="1.8" /></svg>
+      </button>
     </div>
+
+    <section id="settings-screen" class="screen hidden">
+      <div class="card settings-card">
+        <div class="field">
+          <label for="set-preset">Default output</label>
+          <div class="field-body">
+            <div class="select-wrap"><select id="set-preset"></select></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="set-keep">Originals</label>
+          <div class="field-body">
+            <label class="switch-row"><input id="set-keep" type="checkbox" class="switch" /><span>Keep original too</span></label>
+          </div>
+        </div>
+      </div>
+      <button id="settings-done" class="btn btn-secondary btn-block" type="button">Done</button>
+    </section>
 
     <section id="main-screen" class="screen hidden">
       <!-- URL -->
@@ -79,12 +100,30 @@
               <button type="button" role="radio" data-format="mp3">MP3</button>
               <button type="button" role="radio" data-format="m4a">M4A</button>
               <button type="button" role="radio" data-format="wav">WAV</button>
+              <button type="button" role="radio" data-format="original">Original</button>
             </div>
             <p id="audio-hint" class="hint muted"></p>
           </div>
         </div>
 
-        <div class="field">
+        <div class="field" id="preset-field">
+          <label for="preset-select">Output</label>
+          <div class="field-body">
+            <div class="select-wrap">
+              <select id="preset-select"><option value="original">Original</option></select>
+            </div>
+            <div id="still-fields" class="clip-fields hidden">
+              <div class="time-input">
+                <span>At</span>
+                <input id="still-time" type="text" inputmode="numeric" placeholder="0:00" spellcheck="false" />
+              </div>
+            </div>
+            <p id="preset-hint" class="hint muted hidden"></p>
+            <p id="preset-error" class="hint error-text hidden"></p>
+          </div>
+        </div>
+
+        <div class="field" id="clip-field">
           <label for="clip-toggle">Clip</label>
           <div class="field-body">
             <label class="switch-row">
@@ -101,6 +140,13 @@
                 <input id="clip-end" type="text" inputmode="numeric" placeholder="end" spellcheck="false" />
               </div>
               <span id="clip-length" class="hint muted"></span>
+            </div>
+            <div id="clip-more" class="clip-more hidden">
+              <label class="switch-row">
+                <input id="clip-accurate" type="checkbox" class="switch" />
+                <span>Accurate cut</span>
+              </label>
+              <p id="clip-cut-hint" class="hint muted">Fast cut may start up to a few seconds early.</p>
             </div>
             <p id="clip-error" class="hint error-text hidden"></p>
           </div>
@@ -151,6 +197,7 @@
     </section>
   </div>
 
+  <script src="timecode.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
