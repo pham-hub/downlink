@@ -23,6 +23,7 @@ module.exports = {
   mac: {
     ...mac,
     hardenedRuntime: true,
-    notarize: { teamId },
+    // electron-builder 26 notarizes with APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID from the environment.
+    notarize: true,
   },
 };
