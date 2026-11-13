@@ -40,12 +40,20 @@ yt-dlp, Deno and FFmpeg are bundled into the app at build time, so nothing else 
 
 ### Releasing
 
-Pushing a version tag builds both installers on GitHub and attaches them to a release (see `.github/workflows/release.yml`):
+Pushing a version tag builds the Windows installer on GitHub and starts a **draft** release with `RELEASE_NOTES.md` as its text (see `.github/workflows/release.yml`):
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
 ```
+
+The Mac app is built, signed and notarized on a Mac. Add its files to the draft, then publish it:
+
+```bash
+gh release upload v1.2.3 dist/Downlink-arm64.dmg dist/Downlink-arm64.zip dist/Downlink-arm64.dmg.blockmap dist/latest-mac.yml
+```
+
+The app checks GitHub Releases for newer versions of itself (Settings > Updates turns it off), so every release needs the `latest*.yml` files and the `.zip`.
 
 For a signed and notarized Mac build with an Apple Developer ID, see [SIGNING.md](SIGNING.md).
 

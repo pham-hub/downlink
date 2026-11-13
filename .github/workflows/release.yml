@@ -1,23 +1,24 @@
 name: Release
 
+# Windows is built here. The Mac app is signed and notarized on a Mac with a Developer ID
+# (see SIGNING.md) and added to the same release by hand, so GitHub never builds an unsigned
+# Mac app that could replace it.
+#
+#   Push a tag (git tag v1.2.3 && git push origin v1.2.3): builds Windows and makes a DRAFT
+#   release with RELEASE_NOTES.md as its text. Add the Mac files, then publish the draft.
+#   Run it by hand from the Actions tab: builds Windows and keeps the installer as a download
+#   on the run. No release is made.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch: # manual test build: installers are kept as downloads on the run, no release is made
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            asset: dist/Downlink-arm64.dmg
-          - os: windows-latest
-            asset: dist/Downlink-Setup-x64.exe
-    runs-on: ${{ matrix.os }}
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,9 +31,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          name: ${{ matrix.os }}
-          path: ${{ matrix.asset }}
+          name: windows
+          path: |
+            dist/Downlink-Setup-x64.exe
+            dist/Downlink-Setup-x64.exe.blockmap
+            dist/latest.yml
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ${{ matrix.asset }}
+          draft: true
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/Downlink-Setup-x64.exe
+            dist/Downlink-Setup-x64.exe.blockmap
+            dist/latest.yml
