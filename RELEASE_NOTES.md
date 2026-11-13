@@ -7,7 +7,6 @@ Free video and audio downloader for Mac and Windows. Paste a link, download.
 - **Reddit and Instagram.** Works with public posts.
 - **Passwords.** Password-protected Vimeo videos ask for the password.
 - **Show the page.** If Downlink can't find a video, open the page yourself to get past a captcha or login. It finishes as soon as the video plays.
-- **Clip.** Download only part of a video.
 - **History.** Re-download or find past downloads, with thumbnails.
 - **Clipboard.** Offers to download a link you just copied. Off, on focus or always, in Settings.
 - **Updates.** Downlink now updates itself. It downloads quietly and shows "Update ready"; Settings > Updates turns it off.
