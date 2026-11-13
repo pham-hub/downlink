@@ -13,6 +13,7 @@ const { createWatcher } = require('./clipboard-watch');
 const { summarizeFormats, summarizeVariants } = require('./formats');
 const { pickSubtitle } = require('./subtitles');
 const { sniff } = require('./sniff');
+const appUpdater = require('./updater');
 const { startSniffSource, safeName } = require('./sniff/source');
 const { JobStore } = require('./jobs');
 const { friendlyError, errorFromCode } = require('./errors/map');
@@ -120,7 +121,11 @@ app.whenReady().then(() => {
   createWindow();
   setTimeout(updateTools, 5000);
   setInterval(updateTools, UPDATE_CHECK_INTERVAL);
+  appUpdater.start({ send, isEnabled: () => settings.getSettings().autoUpdate !== false });
 });
+
+ipcMain.handle('install-update', () => appUpdater.installNow());
+ipcMain.handle('get-pending-update', () => appUpdater.pending());
 
 // A single-window utility: closing the window quits, so a download is never left running unseen.
 app.on('window-all-closed', () => {

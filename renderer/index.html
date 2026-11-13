@@ -21,6 +21,11 @@
       </button>
     </div>
 
+    <div id="update-banner" class="clip-banner hidden" role="status">
+      <span class="clip-banner-text">Update ready <strong id="update-version"></strong></span>
+      <button id="update-restart" type="button" class="btn btn-small btn-secondary">Restart</button>
+      <button id="update-later" type="button" class="btn btn-small btn-ghost">Later</button>
+    </div>
     <div id="clip-banner" class="clip-banner hidden" role="status">
       <span class="clip-banner-text">Download this link? <strong id="clip-banner-host"></strong></span>
       <button id="clip-banner-go" type="button" class="btn btn-small btn-secondary">Download</button>
@@ -55,6 +60,12 @@
                 <option value="background">Always (background)</option>
               </select>
             </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="set-update">Updates</label>
+          <div class="field-body">
+            <label class="switch-row"><input id="set-update" type="checkbox" class="switch" /><span>Update Downlink automatically</span></label>
           </div>
         </div>
         <div class="field">

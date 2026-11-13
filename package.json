@@ -1,7 +1,7 @@
 {
   "name": "downlink",
   "productName": "Downlink",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Downlink: a simple Mac and Windows video downloader built on yt-dlp",
   "main": "src/main.js",
   "author": "Andrew Pham",
@@ -19,8 +19,8 @@
     "install-app": "node scripts/fetch-tools.js && electron-builder --mac dir --arm64 && rm -rf \"/Applications/Downlink.app\" && cp -R \"dist/mac-arm64/Downlink.app\" /Applications/"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "com.andrewpham.downlink",
@@ -47,6 +47,12 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "arm64"
           ]
@@ -77,6 +83,16 @@
     },
     "dmg": {
       "title": "${productName} ${version}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pham-hub",
+        "repo": "downlink"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

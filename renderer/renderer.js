@@ -205,6 +205,7 @@ function showScreen(name) {
 
 function openSettings() {
   $('set-keep').checked = !!state.settings.keepOriginal;
+  $('set-update').checked = state.settings.autoUpdate !== false;
   $('set-sniff').checked = state.settings.sniffFallback !== false;
   $('set-clipboard').value = state.settings.clipboardWatch || 'on-focus';
   showScreen('settings');
@@ -215,6 +216,18 @@ $('settings-done').addEventListener('click', () => showScreen('main'));
 $('set-sniff').addEventListener('change', (e) => saveSetting('sniffFallback', e.target.checked));
 $('set-clipboard').addEventListener('change', (e) => saveSetting('clipboardWatch', e.target.value));
 $('set-keep').addEventListener('change', (e) => saveSetting('keepOriginal', e.target.checked));
+$('set-update').addEventListener('change', (e) => saveSetting('autoUpdate', e.target.checked));
+
+// A downloaded update waits behind a small notice; it also installs on its own at quit.
+function showUpdate(update) {
+  if (!update) return;
+  $('update-version').textContent = update.version;
+  show($('update-banner'), true);
+}
+window.api.onUpdateReady(showUpdate);
+window.api.getPendingUpdate().then(showUpdate);
+$('update-restart').addEventListener('click', () => window.api.installUpdate());
+$('update-later').addEventListener('click', () => show($('update-banner'), false));
 $('clear-history-btn').addEventListener('click', async () => {
   if (await window.api.history.clear()) renderHistory();
 });

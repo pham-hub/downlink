@@ -11,6 +11,7 @@ const DEFAULTS = {
   // v1.1
   sniffFallback: true,
   clipboardWatch: 'on-focus', // 'off' | 'on-focus' | 'background'
+  autoUpdate: true,
   keepOriginal: false,
   historyLimit: 1000,
 };
@@ -48,7 +49,7 @@ function getSettings() {
 function saveSettings(partial) {
   const allowed = [
     'mode', 'quality', 'audioFormat', 'videoCodec', 'lastFolder',
-    'sniffFallback', 'clipboardWatch',
+    'sniffFallback', 'clipboardWatch', 'autoUpdate',
     'keepOriginal', 'historyLimit',
   ];
   const settings = readSettings();
@@ -57,7 +58,7 @@ function saveSettings(partial) {
     const value = partial[key];
     if (key === 'clipboardWatch' && !CLIPBOARD_MODES.includes(value)) return;
     if (key === 'historyLimit' && !(Number.isInteger(value) && value >= 0)) return;
-    if (['sniffFallback', 'keepOriginal'].includes(key) && typeof value !== 'boolean') return;
+    if (['sniffFallback', 'keepOriginal', 'autoUpdate'].includes(key) && typeof value !== 'boolean') return;
     settings[key] = value;
   });
   writeSettings(settings);
