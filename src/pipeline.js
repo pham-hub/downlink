@@ -95,6 +95,8 @@ function startJob(options, hooks) {
 
     let ext;
     let args = null;
+    // A yt-dlp clip can carry extra seconds before its start; captured streams are cut their own way.
+    const trim = converts && !options.sourceStarter ? presets.clipWindow(options.clip, options.duration, probeInfo.durationSec) : null;
     if (converts) {
       ext = preset.ext;
       args = (output) =>
@@ -104,6 +106,7 @@ function startJob(options, hooks) {
           probeInfo,
           input: sourceFile,
           output,
+          trim,
         });
     } else if (options.mode === 'audio') {
       ext = options.audioFormat === 'mp3' ? 'mp3' : 'm4a';
@@ -151,7 +154,7 @@ function startJob(options, hooks) {
     const run = runFfmpeg({
       ffmpegPath: options.ffmpegPath,
       args: args(output),
-      durationSec: probeInfo.durationSec,
+      durationSec: trim ? trim.length : probeInfo.durationSec,
       onProgress: (percent) => hooks.onProgress({ stage: 'processing', step: 'Convert', percent }),
     });
     current = run;

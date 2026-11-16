@@ -125,11 +125,28 @@ function matchedBitrate(probeInfo) {
 }
 
 // Arguments for the second step: source file in, preset file out.
-function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output }) {
+// A clip yt-dlp cut by stream copy can hold extra footage before the start: with separate video
+// and audio (YouTube's AV1 + Opus, say) each stream starts at its own seek point, up to ~10 s
+// early, and Matroska keeps all of it. yt-dlp stops reading at the clip's end, so the clip is
+// the file's last `length` seconds. Returns where to cut, or null when the file is already right.
+function clipWindow(clip, videoDurationSec, fileDurationSec) {
+  if (!clip || !(fileDurationSec > 0)) return null;
+  const end = clip.end == null ? videoDurationSec : clip.end;
+  if (end == null) return null;
+  const length = end - (clip.start || 0);
+  if (!(length > 0)) return null;
+  const start = fileDurationSec - length;
+  if (start < 0.05) return null;
+  return { start: Math.round(start * 1000) / 1000, length };
+}
+
+function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output, trim }) {
   const base = ['-hide_banner', '-y', '-nostdin', '-progress', 'pipe:1', '-nostats'];
+  // Seeking on the input while re-encoding cuts exactly, keeping video and audio in step.
+  const from = trim ? ['-ss', String(trim.start), '-t', String(trim.length)] : [];
 
   if (presetId === 'wav') {
-    return [...base, '-i', input, '-vn', '-map', '0:a:0', '-c:a', 'pcm_s24le', '-ar', '48000', output];
+    return [...base, ...from, '-i', input, '-vn', '-map', '0:a:0', '-c:a', 'pcm_s24le', '-ar', '48000', output];
   }
   if (presetId === 'h264') {
     const video =
@@ -137,7 +154,7 @@ function buildConvertArgs({ presetId, encoders, probeInfo = {}, input, output })
         ? ['-c:v', 'h264_videotoolbox', '-b:v', String(matchedBitrate(probeInfo))]
         : ['-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast'];
     return [
-      ...base, '-i', input,
+      ...base, ...from, '-i', input,
       '-map', '0:v:0', '-map', '0:a:0?',
       ...video,
       '-pix_fmt', 'yuv420p',
@@ -168,4 +185,5 @@ module.exports = {
   availablePresets,
   probe,
   buildConvertArgs,
+  clipWindow,
 };
