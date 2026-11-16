@@ -2,9 +2,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getToolVersions: () => ipcRenderer.invoke('get-tool-versions'),
-  onUpdateReady: (cb) => ipcRenderer.on('update-ready', (event, data) => cb(data)),
-  getPendingUpdate: () => ipcRenderer.invoke('get-pending-update'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  updateNow: () => ipcRenderer.invoke('update-now'),
+  getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, data) => cb(data)),
+  onUpdateNowRequested: (cb) => ipcRenderer.on('update-now', () => cb()),
   onToolsUpdated: (cb) => ipcRenderer.on('tools-updated', (event, data) => cb(data)),
   fetchInfo: (url, opts) => ipcRenderer.invoke('fetch-info', url, opts),
   getSettings: () => ipcRenderer.invoke('get-settings'),

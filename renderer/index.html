@@ -22,7 +22,8 @@
     </div>
 
     <div id="update-banner" class="clip-banner hidden" role="status">
-      <span class="clip-banner-text">Update ready <strong id="update-version"></strong></span>
+      <span id="update-banner-text" class="clip-banner-text"></span>
+      <button id="update-banner-go" type="button" class="btn btn-small btn-secondary">Update now</button>
       <button id="update-restart" type="button" class="btn btn-small btn-secondary">Restart</button>
       <button id="update-later" type="button" class="btn btn-small btn-ghost">Later</button>
     </div>
@@ -66,6 +67,10 @@
           <label for="set-update">Updates</label>
           <div class="field-body">
             <label class="switch-row"><input id="set-update" type="checkbox" class="switch" /><span>Update Downlink automatically</span></label>
+            <div id="update-now-row" class="update-now-row">
+              <button id="update-now" type="button" class="btn btn-small btn-secondary">Update now</button>
+              <span id="update-status" class="hint muted" aria-live="polite"></span>
+            </div>
           </div>
         </div>
         <div class="field">

@@ -218,16 +218,85 @@ $('set-clipboard').addEventListener('change', (e) => saveSetting('clipboardWatch
 $('set-keep').addEventListener('change', (e) => saveSetting('keepOriginal', e.target.checked));
 $('set-update').addEventListener('change', (e) => saveSetting('autoUpdate', e.target.checked));
 
-// A downloaded update waits behind a small notice; it also installs on its own at quit.
-function showUpdate(update) {
-  if (!update) return;
-  $('update-version').textContent = update.version;
-  show($('update-banner'), true);
+// Updates. As soon as a newer version is found, the main screen offers it: "Update now"
+// downloads it with a visible percentage and restarts into it. Left alone, it downloads
+// quietly, becomes "Update ready" with Restart, and also installs on its own at quit.
+// Settings > Updates and Check for Updates… (Mac app menu) check by hand. Nothing restarts
+// while a video is downloading.
+let updateStatus = { state: 'idle' };
+let updateBannerHidden = false;
+function renderUpdateStatus() {
+  const s = updateStatus;
+  const busy = !!state.downloading;
+  const v = s.version || '';
+
+  // Main-screen banner.
+  let text = '';
+  let go = false;
+  let restart = false;
+  let later = true;
+  if (s.state === 'downloading' && !s.requested) {
+    text = `Update ${v} available`;
+    go = true;
+  } else if (s.state === 'downloading') {
+    text = `Downloading ${v} · ${s.percent || 0}%`;
+    later = false;
+  } else if (s.state === 'ready') {
+    text = `Update ready ${v}`;
+    restart = true;
+  } else if (s.state === 'restarting') {
+    text = 'Restarting…';
+    later = false;
+  } else if (s.state === 'error' && s.requested) {
+    text = 'Couldn’t update. Try again later.';
+  }
+  $('update-banner-text').textContent = text;
+  show($('update-banner-go'), go);
+  show($('update-restart'), restart);
+  $('update-restart').disabled = busy;
+  show($('update-later'), later);
+  show($('update-banner'), !!text && !updateBannerHidden);
+
+  // Settings row.
+  const btn = $('update-now');
+  show($('update-now-row'), s.state !== 'unavailable');
+  $('update-status').textContent = {
+    checking: 'Checking…',
+    downloading: `Downloading ${v} · ${s.percent || 0}%`,
+    ready: `${v} ready`,
+    restarting: 'Restarting…',
+    latest: 'Up to date',
+    error: 'Couldn’t update. Try again.',
+  }[s.state] || '';
+  btn.textContent = s.state === 'ready' || s.state === 'restarting' ? 'Restart to update' : 'Update now';
+  btn.disabled =
+    s.state === 'checking' || s.state === 'restarting' || (s.state === 'downloading' && s.requested) || (s.state === 'ready' && busy);
 }
-window.api.onUpdateReady(showUpdate);
-window.api.getPendingUpdate().then(showUpdate);
+function setUpdateStatus(s) {
+  if (!s) return renderUpdateStatus();
+  // A banner put away with Later comes back once the update is ready to install.
+  if (s.state !== updateStatus.state && (s.state === 'ready' || s.requested)) updateBannerHidden = false;
+  updateStatus = s;
+  renderUpdateStatus();
+}
+window.api.onUpdateStatus(setUpdateStatus);
+window.api.getUpdateStatus().then(setUpdateStatus);
+async function updateNow() {
+  updateBannerHidden = false;
+  setUpdateStatus(await window.api.updateNow());
+}
+$('update-now').addEventListener('click', updateNow);
+$('update-banner-go').addEventListener('click', updateNow);
 $('update-restart').addEventListener('click', () => window.api.installUpdate());
-$('update-later').addEventListener('click', () => show($('update-banner'), false));
+$('update-later').addEventListener('click', () => {
+  updateBannerHidden = true;
+  renderUpdateStatus();
+});
+// Check for Updates… in the Mac app menu.
+window.api.onUpdateNowRequested(() => {
+  openSettings();
+  if (!$('update-now').disabled) updateNow();
+});
 $('clear-history-btn').addEventListener('click', async () => {
   if (await window.api.history.clear()) renderHistory();
 });
@@ -873,6 +942,7 @@ $('choose-folder-btn').addEventListener('click', async () => {
 
 function setDownloading(downloading) {
   state.downloading = downloading;
+  renderUpdateStatus();
   state.cancelling = false;
   show(downloadBtn, !downloading);
   show(progressCard, downloading);

@@ -103,9 +103,22 @@ function setMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }]));
     return;
   }
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }])
-  );
+  const appMenu = {
+    label: app.name,
+    submenu: [
+      { role: 'about' },
+      { label: 'Check for Updates…', click: () => send('update-now') },
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' },
+      { role: 'hideOthers' },
+      { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
+  };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([appMenu, { role: 'editMenu' }, { role: 'windowMenu' }]));
 }
 
 app.whenReady().then(() => {
@@ -121,11 +134,12 @@ app.whenReady().then(() => {
   createWindow();
   setTimeout(updateTools, 5000);
   setInterval(updateTools, UPDATE_CHECK_INTERVAL);
-  appUpdater.start({ send, isEnabled: () => settings.getSettings().autoUpdate !== false });
+  appUpdater.start({ send, isEnabled: () => settings.getSettings().autoUpdate !== false, busy: () => !!activeDownload });
 });
 
 ipcMain.handle('install-update', () => appUpdater.installNow());
-ipcMain.handle('get-pending-update', () => appUpdater.pending());
+ipcMain.handle('update-now', () => appUpdater.updateNow());
+ipcMain.handle('get-update-status', () => appUpdater.status());
 
 // A single-window utility: closing the window quits, so a download is never left running unseen.
 app.on('window-all-closed', () => {
